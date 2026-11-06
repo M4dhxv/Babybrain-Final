@@ -331,8 +331,13 @@ export default function BookingPage() {
   // map onto any of them, so the pack step is hidden and payment stays "single".
   // Monthly billing (00268): no payment at booking. The parent enrols once, books freely and is
   // invoiced on the 1st for the month just ended. Packs and make-up tokens don't apply.
-  const monthlyBilled = !!activity?.monthly_billing_enabled && !isEvent && !isCourse && !isAppointment;
-  const monthly = useActivityMonthly(auth?.user?.id, activity?.id, monthlyBilled);
+  // It is a choice (00271): the vendor OFFERS monthly billing and the parent either pays per booking as
+  // usual (the default, packs and make-up tokens included) or enrols and is invoiced on the 1st. A parent
+  // who is already enrolled books monthly.
+  const monthlyOffered = !!activity?.monthly_billing_enabled && !isEvent && !isCourse && !isAppointment;
+  const monthly = useActivityMonthly(auth?.user?.id, activity?.id, monthlyOffered);
+  const [monthlyChoice, setMonthlyChoice] = useState<"now" | "monthly">("now");
+  const monthlyBilled = monthlyOffered && (!!monthly.enrolment || monthlyChoice === "monthly");
   const [monthlyAgree, setMonthlyAgree] = useState(false);
   const packagesNotOffered = isEvent || isCourse || isAppointment || monthlyBilled;
   // Term enrolment (00243): only for plain (non-Wix) classes with a published
@@ -967,13 +972,14 @@ export default function BookingPage() {
       setErr("Make-up tokens can't be used for ticketed events yet. Contact the provider to arrange your place.");
       return;
     }
+    // An unpaid monthly invoice blocks every new booking in this class, whichever way this one would be paid.
+    if (monthlyOffered && monthly.overdue) {
+      setErr(`You have an overdue payment for ${activity?.title ?? "this class"}. Pay it from your account before booking more sessions.`);
+      return;
+    }
     if (monthlyBilled) {
       if (redeemToken) {
-        setErr("Make-up tokens can't be used on a class that is billed monthly.");
-        return;
-      }
-      if (monthly.overdue) {
-        setErr(`You have an overdue payment for ${activity?.title ?? "this class"}. Pay it from your account before booking more sessions.`);
+        setErr("Make-up tokens can't be used while you're on monthly billing for this class.");
         return;
       }
       if (!monthly.resolved) {
@@ -2403,29 +2409,46 @@ export default function BookingPage() {
                       </section>
                     )}
 
-                    {monthlyBilled && !redeemToken && (
+                    {monthlyOffered && !redeemToken && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">Billed monthly</h3>
+                        <h3 className="mb-2 text-xl font-black">{monthly.overdue ? "Payment overdue" : monthly.enrolment ? "Monthly billing" : "How would you like to pay?"}</h3>
                         {monthly.overdue ? (
                           <p className="rounded-[12px] bg-[#FDECEC] p-4 text-sm font-bold text-[#B42318]">
                             Your invoice for this class was due {lastPayDay(monthly.overdue.dueAt)} and hasn&apos;t been paid, so you can&apos;t book more sessions until it is.{" "}
                             <a href="/profile?tab=monthly" className="underline">Pay it now</a>
                           </p>
                         ) : (
-                          <div className="rounded-[12px] bg-[#F4F0FA] p-4 text-sm font-semibold text-[#3f4b78]">
-                            <ul className="list-disc space-y-1 pl-5">
-                              <li>You pay nothing now. Book as many sessions as you like this month.</li>
-                              <li>On the 1st of next month we invoice you for the sessions you had, at {price != null ? `$${price.toFixed(2).replace(/\.00$/, "")}` : "the session price"} each.</li>
-                              <li>Pay by the end of the {MONTHLY_DUE_DAY}th. If it isn&apos;t paid by then you can&apos;t book more sessions until it is.</li>
-                              <li>To stop, give {MONTHLY_NOTICE_DAYS} days&apos; notice from your account. Sessions in that time are still billed.</li>
-                            </ul>
-                            {monthly.enrolment ? (
-                              <p className="mt-3 font-black text-palette-green"><Icon name="check" className="mr-1 inline h-4 w-4" /> You&apos;re enrolled — this session will be added to your monthly invoice.</p>
-                            ) : (
-                              <label className="mt-3 flex cursor-pointer items-start gap-2.5 font-black">
-                                <input type="checkbox" className="mt-1 h-4 w-4 accent-[#C90044]" checked={monthlyAgree} onChange={(e) => setMonthlyAgree(e.target.checked)} />
-                                <span>I understand how monthly billing works and want to enrol.</span>
-                              </label>
+                          <div className="space-y-3">
+                            {!monthly.enrolment && (
+                              <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="How to pay">
+                                {([
+                                  ["now", "Pay now", "Pay for this session when you book. Packs and make-up tokens work as usual."],
+                                  ["monthly", "Monthly billing", "Pay nothing now. We invoice you on the 1st of next month for the sessions you booked."],
+                                ] as const).map(([key, title, note]) => (
+                                  <label key={key} className={`flex cursor-pointer items-start gap-2.5 rounded-[12px] border p-4 ${monthlyChoice === key ? "border-baby-cta bg-[#FEEBF2]" : "border-[#EBE3E5] bg-white"}`}>
+                                    <input type="radio" name="monthly-choice" className="mt-1 h-4 w-4 accent-[#C90044]" checked={monthlyChoice === key} onChange={() => setMonthlyChoice(key)} />
+                                    <span><span className="block font-black">{title}</span><span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{note}</span></span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                            {monthlyBilled && (
+                              <div className="rounded-[12px] bg-[#F4F0FA] p-4 text-sm font-semibold text-[#3f4b78]">
+                                <ul className="list-disc space-y-1 pl-5">
+                                  <li>You pay nothing now. Book as many sessions as you like this month.</li>
+                                  <li>On the 1st of next month we invoice you for the sessions you had, at {price != null ? `$${price.toFixed(2).replace(/\.00$/, "")}` : "the session price"} each.</li>
+                                  <li>Pay by the end of the {MONTHLY_DUE_DAY}th. If it isn&apos;t paid by then you can&apos;t book more sessions until it is.</li>
+                                  <li>To go back to paying per booking, give {MONTHLY_NOTICE_DAYS} days&apos; notice from your account. Sessions in that time are still billed.</li>
+                                </ul>
+                                {monthly.enrolment ? (
+                                  <p className="mt-3 font-black text-palette-green"><Icon name="check" className="mr-1 inline h-4 w-4" /> You&apos;re on monthly billing — this session will be added to your monthly invoice.</p>
+                                ) : (
+                                  <label className="mt-3 flex cursor-pointer items-start gap-2.5 font-black">
+                                    <input type="checkbox" className="mt-1 h-4 w-4 accent-[#C90044]" checked={monthlyAgree} onChange={(e) => setMonthlyAgree(e.target.checked)} />
+                                    <span>I understand how monthly billing works and want to enrol.</span>
+                                  </label>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}

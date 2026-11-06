@@ -63,7 +63,7 @@ export function MonthlyPanel({ data, reload }: { data: MonthlyData; reload: () =
     <div>
       <h1 className="text-[26px] font-black">Monthly billing</h1>
       <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">
-        For classes billed monthly you don't pay when you book. Book as many sessions as you like; on the 1st we invoice you for the month just ended,
+        For classes where you chose monthly billing you don't pay when you book. Book as many sessions as you like; on the 1st we invoice you for the month just ended,
         and you have until the end of the {MONTHLY_DUE_DAY}th to pay. Leaving takes {MONTHLY_NOTICE_DAYS} days' notice.
       </p>
 
