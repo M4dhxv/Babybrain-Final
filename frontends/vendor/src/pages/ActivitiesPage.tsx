@@ -69,6 +69,7 @@ import { SKIP_EDITOR_TYPES } from '@/lib/usePhotoEditor';
 import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
+import { MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, monthlyPreviewEnabled, setMonthlyEnabled, useMonthlyEnabledMap } from '@/lib/monthlyBilling';
 import { DayPricesEditor, dayPricesFromJson, dayPricesToJson, type DayPrices } from '@/components/DayPricesEditor';
 import { WixFormHandling } from '@/components/WixFormHandling';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
@@ -591,6 +592,10 @@ export default function ActivitiesPage() {
   const [sessError, setSessError] = useState<string | null>(null);
   const [togglingSessId, setTogglingSessId] = useState<string | null>(null);
   const [removeSessTarget, setRemoveSessTarget] = useState<Sess | null>(null);
+  // Is monthly billing offered on this activity (00268, a parent's choice since 00271)?
+  const monthlyOn = monthlyPreviewEnabled();
+  const monthlyEnabledMap = useMonthlyEnabledMap();
+  const [monthlyToggle, setMonthlyToggle] = useState(false);
   const [removingSess, setRemovingSess] = useState(false);
   // Heads-up only: sessions were saved, but overlap something on the Wix calendar.
   const [sessNotice, setSessNotice] = useState<string | null>(null);
@@ -1403,6 +1408,7 @@ export default function ActivitiesPage() {
     setShowSecondQ(false);
     setForm(emptyForm);
     setFormError(null);
+    setMonthlyToggle(false);
     setShowDrawer(true);
   }
 
@@ -1415,6 +1421,7 @@ export default function ActivitiesPage() {
     setForm(formFrom(a));
     setPriceOverridden((a.wix_locked_fields ?? []).includes('price'));
     setFormError(null);
+    setMonthlyToggle(monthlyOn && !!monthlyEnabledMap[a.id]);
     setShowDrawer(true);
   }
 
@@ -1443,6 +1450,7 @@ export default function ActivitiesPage() {
     setForm({ ...formFrom(a), title: '' });
     setPriceOverridden(false);
     setFormError(null);
+    setMonthlyToggle(false);
     setShowDrawer(true);
   }
 
@@ -1816,6 +1824,15 @@ export default function ActivitiesPage() {
       } catch (e) {
         console.error('[ActivitiesPage] session capacity cascade threw', e);
         cascadeError = 'Activity saved, but upcoming sessions could not be re-synced to the new capacity, so waitlisted families were not emailed. Please try saving again, or update capacity per-session under Manage schedule.';
+      }
+    }
+
+    // The "bill monthly" switch is saved with the activity (activities.monthly_billing_enabled).
+    if (monthlyOn && editingId && !isWixLinked) {
+      try {
+        await setMonthlyEnabled(editingId, monthlyToggle);
+      } catch (e) {
+        cascadeError = `Activity saved, but monthly billing could not be changed: ${(e as { message?: string })?.message ?? 'please try again.'}`;
       }
     }
 
@@ -2436,6 +2453,22 @@ export default function ActivitiesPage() {
               <textarea placeholder="Describe this activity..." rows={3} maxLength={500} className={cn(inputCls, 'resize-none')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               <div className="text-right text-xs text-gray-400 mt-1">{form.description.length}/500</div>
             </div>
+            {monthlyOn && !isWixLinked && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Offer monthly billing</div>
+                    <div className="mt-0.5 text-xs text-gray-500">
+                      {monthlyToggle
+                        ? `On. Parents choose when they book: pay per booking as usual, or enrol in monthly billing. Monthly parents book any number of sessions at the session price, are invoiced on the 1st for the month just ended, and have until the end of the ${MONTHLY_DUE_DAY}th to pay; until then they can't book more. Leaving takes ${MONTHLY_NOTICE_DAYS} days' notice.`
+                        : 'Let parents choose monthly billing instead of paying per booking. Everyone else still pays per booking, with packs and make-up tokens as usual.'}
+                    </div>
+                    {!editingId && <div className="mt-1 text-xs text-gray-500">Save the activity first, then turn monthly billing on.</div>}
+                  </div>
+                  <Switch checked={monthlyToggle} onCheckedChange={setMonthlyToggle} disabled={!editingId} aria-label="Offer monthly billing" />
+                </div>
+              </div>
+            )}
             {priceOverridable && (
               <div>
                 <label className="text-sm font-medium text-gray-900 mb-1.5 block">Price (SGD per session)</label>

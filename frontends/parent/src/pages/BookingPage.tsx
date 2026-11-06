@@ -22,6 +22,7 @@ import { clearBookingDraft, readBookingDraft, saveBookingDraft } from "../lib/bo
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, routePath, rememberLoginNext, clearLoginNext } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
+import { enrolMonthly, useActivityMonthly, MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, lastPayDay } from "../lib/monthly";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
 import type { ActivitySession, ProviderPolicy } from "../lib/database.types";
@@ -313,7 +314,17 @@ export default function BookingPage() {
   // occurrence, a COURSE is enrolled as one whole programme, and an
   // APPOINTMENT is a single one-to-one slot — one credit = one session doesn't
   // map onto any of them, so the pack step is hidden and payment stays "single".
-  const packagesNotOffered = isEvent || isCourse || isAppointment;
+  // Monthly billing (00268): no payment at booking. The parent enrols once, books freely and is
+  // invoiced on the 1st for the month just ended. Packs and make-up tokens don't apply.
+  // It is a choice (00271): the vendor OFFERS monthly billing and the parent either pays per booking as
+  // usual (the default, packs and make-up tokens included) or enrols and is invoiced on the 1st. A parent
+  // who is already enrolled books monthly.
+  const monthlyOffered = !!activity?.monthly_billing_enabled && !isEvent && !isCourse && !isAppointment;
+  const monthly = useActivityMonthly(auth?.user?.id, activity?.id, monthlyOffered);
+  const [monthlyChoice, setMonthlyChoice] = useState<"now" | "monthly">("now");
+  const monthlyBilled = monthlyOffered && (!!monthly.enrolment || monthlyChoice === "monthly");
+  const [monthlyAgree, setMonthlyAgree] = useState(false);
+  const packagesNotOffered = isEvent || isCourse || isAppointment || monthlyBilled;
   // Non-cancellable once booked: always for Wix ticketed events and courses
   // (reserved inside Wix), and for any other activity where the provider has
   // turned the cancellation toggle off on the edit-activity card. Drives the
@@ -873,6 +884,25 @@ export default function BookingPage() {
       setErr("Make-up tokens can't be used for ticketed events yet. Contact the provider to arrange your place.");
       return;
     }
+    // An unpaid monthly invoice blocks every new booking in this class, whichever way this one would be paid.
+    if (monthlyOffered && monthly.overdue) {
+      setErr(`You have an overdue payment for ${activity?.title ?? "this class"}. Pay it from your account before booking more sessions.`);
+      return;
+    }
+    if (monthlyBilled) {
+      if (redeemToken) {
+        setErr("Make-up tokens can't be used while you're on monthly billing for this class.");
+        return;
+      }
+      if (!monthly.resolved) {
+        setErr("Still checking your enrolment — try again in a moment.");
+        return;
+      }
+      if (!monthly.enrolment && !monthlyAgree) {
+        setErr("Please tick the box to confirm how monthly billing works.");
+        return;
+      }
+    }
     setBusy(true);
     let status: string | null = null;
     // Seats from a multi-child party that didn't fit and stayed on the
@@ -1052,6 +1082,16 @@ export default function BookingPage() {
       // the rest carry the optional guest names.
       const guests =
         count > 1 ? Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) : [];
+      // First booking in a monthly class: enrol first (the database refuses a booking without it).
+      if (monthlyBilled && !monthly.enrolment && activity?.id) {
+        try {
+          await enrolMonthly(activity.id);
+        } catch (e) {
+          setBusy(false);
+          setErr(cleanRpcErrorMessage(e as { message: string; code?: string | null }));
+          return;
+        }
+      }
       const { data, error } = await supabase
         .rpc("book_party", {
           p_session_id: sessionId,
@@ -1078,7 +1118,7 @@ export default function BookingPage() {
       // own leftover-waitlist count for the success page). Free class stays
       // direct. 'waitlisted' means nothing fit — no payment, straight to the
       // waitlist confirmation.
-      if (price != null && price > 0 && partyStatus !== "waitlisted") {
+      if (price != null && price > 0 && partyStatus !== "waitlisted" && !monthlyBilled) {
         try {
           const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", {
             group_id: groupId,
@@ -1114,6 +1154,8 @@ export default function BookingPage() {
       venue: displayVenue ?? "",
       staff: displayStaff ?? "",
       ...(status !== "waitlisted" && wl > 0 ? { wl: String(wl) } : {}),
+      // Nothing was charged: it goes on the monthly invoice (00268).
+      ...(monthlyBilled ? { monthly: "1" } : {}),
     });
     // This path can have just redeemed a make-up token — don't leave the
     // Profile tab's cached token list showing it as still unredeemed.
@@ -1409,6 +1451,8 @@ export default function BookingPage() {
         : total != null
           ? `Get ${ticketCount > 1 ? `${ticketCount} tickets` : "ticket"} — ${selectedTicketType?.currency ?? ""} ${total.toFixed(2)}`
           : "Get ticket"
+      : monthlyBilled
+        ? monthly.enrolment ? "Confirm booking" : "Enrol & book"
       : redeemToken
         ? "Confirm with make-up token"
         : payWith === "credit"
@@ -1815,6 +1859,52 @@ export default function BookingPage() {
                       </section>
                     )}
 
+                    {monthlyOffered && !redeemToken && (
+                      <section>
+                        <h3 className="mb-2 text-xl font-black">{monthly.overdue ? "Payment overdue" : monthly.enrolment ? "Monthly billing" : "How would you like to pay?"}</h3>
+                        {monthly.overdue ? (
+                          <p className="rounded-[12px] bg-[#FDECEC] p-4 text-sm font-bold text-[#B42318]">
+                            Your invoice for this class was due {lastPayDay(monthly.overdue.dueAt)} and hasn&apos;t been paid, so you can&apos;t book more sessions until it is.{" "}
+                            <a href="/profile?tab=monthly" className="underline">Pay it now</a>
+                          </p>
+                        ) : (
+                          <div className="space-y-3">
+                            {!monthly.enrolment && (
+                              <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="How to pay">
+                                {([
+                                  ["now", "Pay now", "Pay for this session when you book. Packs and make-up tokens work as usual."],
+                                  ["monthly", "Monthly billing", "Pay nothing now. We invoice you on the 1st of next month for the sessions you booked."],
+                                ] as const).map(([key, title, note]) => (
+                                  <label key={key} className={`flex cursor-pointer items-start gap-2.5 rounded-[12px] border p-4 ${monthlyChoice === key ? "border-baby-cta bg-[#FEEBF2]" : "border-[#EBE3E5] bg-white"}`}>
+                                    <input type="radio" name="monthly-choice" className="mt-1 h-4 w-4 accent-[#C90044]" checked={monthlyChoice === key} onChange={() => setMonthlyChoice(key)} />
+                                    <span><span className="block font-black">{title}</span><span className="mt-0.5 block text-sm font-semibold text-[#59658d]">{note}</span></span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                            {monthlyBilled && (
+                              <div className="rounded-[12px] bg-[#F4F0FA] p-4 text-sm font-semibold text-[#3f4b78]">
+                                <ul className="list-disc space-y-1 pl-5">
+                                  <li>You pay nothing now. Book as many sessions as you like this month.</li>
+                                  <li>On the 1st of next month we invoice you for the sessions you had, at {price != null ? `$${price.toFixed(2).replace(/\.00$/, "")}` : "the session price"} each.</li>
+                                  <li>Pay by the end of the {MONTHLY_DUE_DAY}th. If it isn&apos;t paid by then you can&apos;t book more sessions until it is.</li>
+                                  <li>To go back to paying per booking, give {MONTHLY_NOTICE_DAYS} days&apos; notice from your account. Sessions in that time are still billed.</li>
+                                </ul>
+                                {monthly.enrolment ? (
+                                  <p className="mt-3 font-black text-palette-green"><Icon name="check" className="mr-1 inline h-4 w-4" /> You&apos;re on monthly billing — this session will be added to your monthly invoice.</p>
+                                ) : (
+                                  <label className="mt-3 flex cursor-pointer items-start gap-2.5 font-black">
+                                    <input type="checkbox" className="mt-1 h-4 w-4 accent-[#C90044]" checked={monthlyAgree} onChange={(e) => setMonthlyAgree(e.target.checked)} />
+                                    <span>I understand how monthly billing works and want to enrol.</span>
+                                  </label>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </section>
+                    )}
+
                     {/* Step 5: how to pay for the class — a single drop-in, an
                         unused credit from a pack, or buying a pack now. Not
                         applicable to a Wix Event ticket — payment is always a
@@ -1937,13 +2027,13 @@ export default function BookingPage() {
                 <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
-              <p className="flex justify-between text-lg font-black"><span>Total</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>
+              <p className="flex justify-between text-lg font-black"><span>{monthlyBilled ? "On your monthly invoice" : "Total"}</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>
             </aside>
           </div>
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">Total amount</span><strong className="text-3xl">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "—"}</strong></p></div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">{monthlyBilled ? "Added to your monthly invoice" : "Total amount"}</span><strong className="text-3xl">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "—"}</strong></p></div>
             {err && (
               <div ref={errRef} role="alert" className="mt-3 flex items-start gap-2 rounded-[10px] bg-palette-purpleSoft px-3.5 py-2.5 text-sm font-bold text-palette-purpleInk">
                 <Icon name="bell" className="mt-0.5 h-4 w-4 shrink-0" />
@@ -1994,7 +2084,7 @@ export default function BookingPage() {
               {nonRefundableOnCancel && (
                 <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>
               )}
-              {displayTotal != null && displayTotal > 0 && (
+              {displayTotal != null && displayTotal > 0 && !monthlyBilled && (
                 <p className="text-xs font-semibold text-[#6D748D]">Secure and encrypted payment via Stripe</p>
               )}
             </div>

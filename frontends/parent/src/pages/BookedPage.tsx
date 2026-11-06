@@ -33,6 +33,8 @@ export default function BookedPage() {
   const linkProviderId = getParam("provider") || "";
   const linkProviderName = getParam("pname") || "";
   const waitlisted = status === "waitlisted";
+  // Booked on a class that is billed monthly: nothing was charged now (00268).
+  const monthlyBooked = getParam("monthly") === "1";
   // A party that straddled the session's capacity (00104): the seats that fit
   // are confirmed/paid, this many are still on the waitlist.
   const wlLeft = Number(getParam("wl") || 0);
@@ -162,6 +164,12 @@ export default function BookedPage() {
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 space-y-4 font-semibold"><p className="flex justify-between"><span>Activity</span><span className="text-right">{title}</span></p>{when && <p className="flex justify-between"><span>When</span><span className="text-right">{when}</span></p>}{venue && <p className="flex justify-between"><span>Where</span><span className="text-right">{venue}</span></p>}{staff && <p className="flex justify-between"><span>With</span><span className="text-right">{staff}</span></p>}<p className="flex justify-between"><span>Status</span><strong className={waitlisted ? "text-palette-yellow" : "text-palette-green"}>{waitlisted ? "Waitlisted" : "Confirmed"}</strong></p></div>
               <p className={`mt-5 rounded-[12px] p-4 font-semibold ${waitlisted ? "bg-amber-50 text-palette-yellow" : "bg-[#F1FBEF] text-palette-green"}`}><Icon name="check" className="mr-2 inline h-5 w-5" /> {waitlisted ? "Added to the waitlist" : "Booking confirmed"}</p>
+              {monthlyBooked && !waitlisted && (
+                <p className="mt-3 rounded-[12px] bg-[#F4F0FA] p-4 text-sm font-semibold text-[#3f4b78]">
+                  You haven&apos;t been charged. This session is added to your monthly invoice, issued on the 1st and due by the end of the 5th.{" "}
+                  <a href="/profile?tab=monthly" className="font-black underline">See what you owe</a>
+                </p>
+              )}
               <Button href="/profile?tab=bookings" className="mt-5 w-full">View my bookings</Button>
               {/* Phones only: pass the booking on to a partner or helper through
                   the share sheet (WhatsApp, iMessage, AirDrop). */}

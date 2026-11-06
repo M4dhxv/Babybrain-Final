@@ -6,6 +6,7 @@ import { purchasePackageAndBook } from '@/lib/stripe-package-purchase';
 import { confirmPaidBookingSeats } from '@/lib/confirm-paid-booking-seats';
 import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
+import { settleMonthlyInvoice } from '@/lib/monthly-invoice-payment';
 import { stripeConfigKeyFor } from '@/lib/stripe-config';
 import { applyPayout } from '@/lib/payouts';
 import { markEarningRefunded } from '@/lib/refunds';
@@ -522,6 +523,15 @@ export async function POST(request: Request) {
               paymentIntentId: paymentIntent,
             });
           }
+        }
+      }
+
+      if (kind === 'monthly_invoice') {
+        // A monthly invoice (00268). The parent has paid and the invoice is still open in our books
+        // if this fails, so answer 500 and let Stripe redeliver (settling twice is safe).
+        const settled = await settleMonthlyInvoice(admin, session);
+        if (!settled.ok) {
+          return NextResponse.json({ error: 'Monthly invoice payment not recorded' }, { status: 500 });
         }
       }
 

@@ -42,6 +42,9 @@ const ALLOWED = new Set([
   'provider_recent_bookings', 'provider_session_roster', 'provider_set_purchase_expiry',
   'provider_trial_conversion', 'mark_provider_notifications_seen', 'promote_waitlist_entry',
   'respond_to_review', 'vendor_cancel_session',
+  // Monthly billing (00268): each checks the caller itself (the parent's own enrolment, or the provider's manager).
+  'monthly_enrol', 'monthly_give_notice', 'monthly_withdraw_notice', 'monthly_unbilled', 'monthly_settle_invoice',
+  'monthly_provider_enrolments', 'monthly_provider_invoices',
   // Used inside RLS policies, so the calling role must be able to run them
   'user_provider_ids', 'user_manage_provider_ids', 'user_owner_provider_ids',
   // Pure helpers / read-only lookups of already-public data

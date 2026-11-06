@@ -44,6 +44,8 @@ import { sessionCacheGet, sessionCacheSet, sessionCacheInvalidate } from "../lib
 import { apiGet, apiPost } from "../lib/api";
 import { CHAT_TYPES_FILTER } from "../lib/notifications";
 import { cleanRpcErrorMessage } from "../lib/errors";
+import { MonthlyPanel } from "../components/MonthlyPanel";
+import { useMonthly } from "../lib/monthly";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { isMultiDay, sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
 import { SessionSchedule } from "../components/SessionSchedule";
@@ -1632,6 +1634,12 @@ export default function ProfilePage() {
   const shownPlan = billingPlan?.plan ?? (planKnown ? (isPlus ? "plus" : "free") : null);
   const [billingBusy, setBillingBusy] = useState(false);
   const tab = getParam("tab") || "overview";
+  // Monthly billing (00268): the tab only appears for a parent with a monthly class (or arriving from its link).
+  const monthly = useMonthly(session?.user?.id);
+  const hasMonthly = !!monthly.data && monthly.data.enrolments.length > 0;
+  const profileTabs: [string, string, string, boolean][] = hasMonthly || tab === "monthly"
+    ? [...PROFILE_TABS.slice(0, 3), ["monthly", "Monthly billing", "calendar", false], ...PROFILE_TABS.slice(3)]
+    : PROFILE_TABS;
   /* Unread badge on the Messages tab (QA 04/09). Free parents can read their
      conversations now, so the badge is worth showing to them too — an unread
      message they can open is exactly what it is for. */
@@ -2678,7 +2686,7 @@ export default function ProfilePage() {
               </div>
             )}
             <nav className="mt-4 space-y-1.5">
-              {PROFILE_TABS.map(([key, item, icon, plusOnly]) => {
+              {profileTabs.map(([key, item, icon, plusOnly]) => {
                 const locked = planKnown && plusOnly && !isPlus;
                 return (
                   <a
@@ -2968,6 +2976,16 @@ export default function ProfilePage() {
               this they only saw the Plus lock and couldn't tell the purchase
               worked (guide review 28 Sep). The credits do show on the
               provider's booking page for Free parents too. */}
+          {tab === "monthly" && (
+            monthly.data ? (
+              <MonthlyPanel data={monthly.data} reload={monthly.reload} />
+            ) : monthly.error ? (
+              <EmptyPanel icon="calendar" copy="We couldn't load your monthly billing just now. Please refresh in a moment." />
+            ) : (
+              <ListRowsSkeleton count={2} lines={2} />
+            )
+          )}
+
           {tab === "packages" && planKnown && !isPlus && getParam("purchase") === "success" && (
             <p role="status" className="mb-4 rounded-[12px] bg-[#F1FBEF] p-4 font-semibold text-palette-green">
               <Icon name="check" className="mr-2 inline h-5 w-5" />

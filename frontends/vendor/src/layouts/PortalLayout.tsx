@@ -22,6 +22,7 @@ import {
   Lock,
   Wallet,
   LogOut,
+  CalendarClock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUnreadMessages } from '@/lib/chat';
@@ -34,6 +35,7 @@ import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import { PushPrompt } from '@/components/PushPrompt';
 import { prefetchRoute, warmPortal } from '@/lib/prefetch';
 import { useBoutiqueLook } from '@/lib/look';
+import { monthlyPreviewEnabled } from '@/lib/monthlyBilling';
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -42,6 +44,8 @@ const sidebarItems = [
   { icon: CalendarCheck, label: 'Bookings', path: '/bookings' },
   { icon: Package, label: 'Packages', path: '/packages' },
   { icon: Gift, label: 'Make-up tokens', path: '/make-up-tokens' },
+  // Monthly billing (00268) is behind the same kind of preview flag as terms.
+  { icon: CalendarClock, label: 'Monthly billing', path: '/monthly-billing', preview: 'monthly' as const },
   // Messaging is available on every tier, including Pay As You Grow.
   { icon: MessageSquare, label: 'Messages', path: '/messages' },
   { icon: Bell, label: 'Notifications', path: '/notifications' },
@@ -177,7 +181,7 @@ export default function PortalLayout() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {sidebarItems.map((item) => {
+          {sidebarItems.filter((item) => !('preview' in item) || monthlyPreviewEnabled()).map((item) => {
             const isActive = location.pathname === item.path;
             // Pro-only tabs stay visible but greyed, so the feature is
             // discoverable rather than hidden. The page itself explains the
