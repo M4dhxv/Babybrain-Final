@@ -55,6 +55,11 @@ export async function GET(request: Request) {
   const regions = (sp.get('region') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
   if (regions.length) rows = rows.filter((r) => r.regions.some((x) => regions.includes(x)));
 
+  // Comma-separated activity types (music, swimming, ...): unlike region, a parent must have picked ALL of
+  // the ones chosen, so adding a type narrows the list to the overlap.
+  const interests = (sp.get('interest') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (interests.length) rows = rows.filter((r) => interests.every((i) => r.interests.includes(i)));
+
   // Comma-separated device types (ios, android, macos, windows, chromeos, linux, other, none): a parent
   // matches when they have used any of them. 'none' = no device recorded yet.
   const devices = (sp.get('device') ?? '').split(',').map((x) => x.trim()).filter(Boolean);

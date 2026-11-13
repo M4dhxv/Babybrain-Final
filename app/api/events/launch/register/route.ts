@@ -13,7 +13,14 @@ import { emailRegistration } from '@/lib/launch-event-notify';
  * whether the whole party is confirmed or goes on the waitlist (50 seats per slot).
  * The browser is only ever told confirmed / waitlisted - never seat counts.
  */
+const REGISTRATION_CLOSED = true as boolean;
+
 export async function POST(request: Request) {
+  // Registration closed after the event was held on 8 Nov 2026. Set REGISTRATION_CLOSED to false to reopen.
+  if (REGISTRATION_CLOSED) {
+    return NextResponse.json({ error: 'Registration for this event is now closed.' }, { status: 410 });
+  }
+
   const db = createAdminClient() as unknown as SupabaseClient;
 
   // 20 attempts per IP per 10 minutes: plenty for a family retrying, tight for a script.
