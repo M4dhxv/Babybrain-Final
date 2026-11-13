@@ -24,13 +24,13 @@ type ParentsPage = { rows: ParentRowT[]; total: number; withPush?: number; page:
 export type ParentFilters = {
   q: string; plan: string; marketing: string; activity: string; has_children: string;
   joined_from: string; joined_to: string; child_min: string; child_max: string;
-  onboarded: string; min_spend: string; area: string; account: string; region: string; device: string; source: string; app: string; push: string;
+  onboarded: string; min_spend: string; area: string; account: string; region: string; interest: string; device: string; source: string; app: string; push: string;
 };
 const NO_FILTERS: ParentFilters = {
   q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
-  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '', device: '', source: '', app: '', push: '',
+  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '', interest: '', device: '', source: '', app: '', push: '',
 };
-const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region', 'device', 'app', 'push', 'source'];
+const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region', 'interest', 'device', 'app', 'push', 'source'];
 /** The one badge an account carries. Parents carry none. */
 /** "today", "3 days ago", "5 weeks ago" - how long ago something happened. */
 const agoText = (iso: string) => {
@@ -83,6 +83,13 @@ function postalDistrict(code: string | null | undefined): string | null {
   const hit = POSTAL_DISTRICTS.find(([sectors]) => sectors.includes(sector));
   return hit ? `D${hit[1]} – ${hit[2]}` : null;
 }
+/** Activity types (activity_categories slugs) a parent can be filtered by. A slug not listed here still works, shown as its slug. */
+const INTEREST_LABELS: Record<string, string> = {
+  music: 'Music', 'sensory-play': 'Sensory Play', 'art-creativity': 'Art & Creativity', swimming: 'Swimming', gymnastics: 'Gymnastics',
+  'early-learning': 'Early Learning', 'parent-baby': 'Baby & Me Exercise', playspaces: 'Playspaces', 'community-events': 'Community Events',
+  'holiday-camps': 'Holiday Camps', movement: 'Movement & Dance',
+};
+const INTEREST_OPTIONS = Object.entries(INTEREST_LABELS).map(([id, label]) => ({ id, label }));
 /** Device types a parent can be filtered by (the ids match lib/admin-parents.ts). */
 const DEVICE_LABELS: Record<string, string> = {
   ios: 'iPhone / iPad (iOS)', android: 'Android', macos: 'Mac', windows: 'Windows PC', chromeos: 'Chromebook', linux: 'Linux', other: 'Other',
@@ -526,6 +533,11 @@ export default function ParentsView() {
               options={Object.entries(REGION_LABELS).map(([id, label]) => ({ id, label }))}
               selected={f.region.split(',').filter(Boolean)}
               onChange={(ids) => { setF((p) => ({ ...p, region: ids.join(',') })); setPage(1); }} width="fill" />
+            {/* Parents who picked ALL the chosen types (not any of them). */}
+            <MultiSelect label="Activity type (all selected)" placeholder="Any type"
+              options={INTEREST_OPTIONS}
+              selected={f.interest.split(',').filter(Boolean)}
+              onChange={(ids) => { setF((p) => ({ ...p, interest: ids.join(',') })); setPage(1); }} width="fill" />
             <MultiSelect label="Device" placeholder="Any device"
               options={DEVICE_OPTIONS}
               selected={f.device.split(',').filter(Boolean)}

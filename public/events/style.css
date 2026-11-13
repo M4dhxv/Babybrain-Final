@@ -54,6 +54,10 @@
   .when { margin-top: 14px; font-weight: 800; font-size: 15px; }
   .where { margin-top: 10px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
   .where b { color: var(--ink); font-weight: 700; }
+  #rsvp[hidden] { display: none; }
+  .closed-note { margin-top: 22px; padding: 18px 20px; border-radius: 16px; background: rgba(250, 77, 141, .08); text-align: center; line-height: 1.55; font-size: 15px; }
+  .closed-note p + p { margin-top: 6px; color: var(--muted); }
+  .closed-note strong { color: var(--ink); font-weight: 800; }
 
   /* ---------- form slides ---------- */
   form { margin-top: 2px; display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }

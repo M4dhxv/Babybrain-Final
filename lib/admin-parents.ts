@@ -58,6 +58,8 @@ export type AdminParent = {
   marketing: 'consented' | 'withdrawn' | 'not_consented'; onboarded: boolean; joinedAt: string;
   /** Areas they asked for at sign-up: central, east, north-east, north, west, sentosa. */
   regions: string[];
+  /** Activity type slugs (music, swimming, ...) the parent or their children picked. Filter only, never shown as a column. */
+  interests: string[];
   /** The one status shown for the account. */
   kind: AccountKind;
   /** Holds an active seat at a vendor (owner or staff), with the business names. */
@@ -146,10 +148,10 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       }
       return fetchAll<ParentRow>((f, t) => admin.from('parent_profiles').select(select as string).range(f, t) as unknown as PromiseLike<{ data: ParentRow[] | null; error: { message: string } | null }>);
     })(),
-    fetchAll<{ parent_id: string; name: string; date_of_birth: string }>((f, t) =>
-      admin.from('children').select('parent_id, name, date_of_birth').range(f, t)),
-    fetchAll<{ user_id: string; preferred_regions: string[] | null }>((f, t) =>
-      admin.from('user_preferences').select('user_id, preferred_regions').range(f, t)),
+    fetchAll<{ parent_id: string; name: string; date_of_birth: string; interests: string[] | null }>((f, t) =>
+      admin.from('children').select('parent_id, name, date_of_birth, interests').range(f, t)),
+    fetchAll<{ user_id: string; preferred_regions: string[] | null; interests: string[] | null }>((f, t) =>
+      admin.from('user_preferences').select('user_id, preferred_regions, interests').range(f, t)),
     fetchAll<{ id: string; user_id: string; session_id: string; status: string; payment_status: string; amount: number | null; created_at: string }>((f, t) =>
       admin.from('bookings').select('id, user_id, session_id, status, payment_status, amount, created_at').range(f, t)),
     // Only future sessions matter (for "upcoming"), which is far fewer rows than all of them.
@@ -208,6 +210,13 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
     kidsBy.set(k.parent_id, list);
   }
   const regionsBy = new Map(prefs.map((r) => [r.user_id, r.preferred_regions ?? []]));
+  // Activity types a parent picked: their own preferences plus what they ticked for each child.
+  const interestsBy = new Map<string, Set<string>>(prefs.map((r) => [r.user_id, new Set(r.interests ?? [])]));
+  for (const k of kids) {
+    const set = interestsBy.get(k.parent_id) ?? new Set<string>();
+    for (const i of k.interests ?? []) set.add(i);
+    interestsBy.set(k.parent_id, set);
+  }
   const seatsBy = new Map<string, { business_name: string | null; is_test: boolean | null }[]>();
   for (const s of seats) {
     if (!s.provider) continue;
@@ -275,6 +284,7 @@ async function build(admin: SupabaseClient, now: number, fresh: boolean): Promis
       onboarded: !!p.onboarding_completed_at,
       joinedAt: p.created_at,
       regions: regionsBy.get(p.id) ?? [],
+      interests: [...(interestsBy.get(p.id) ?? [])],
       kind: cls.kind,
       isVendor: cls.isVendor,
       vendorNames: [...new Set(seatList.map((v) => v.business_name).filter((n): n is string => !!n))],
