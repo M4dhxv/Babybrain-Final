@@ -7,6 +7,7 @@ import { sessionPrice } from '@/lib/session-price';
 import { appOrigin } from '@/lib/cors';
 import { sgDateTime } from '@/lib/format';
 import { computeSplit, getTerms } from '@/lib/commercials';
+import { normalisePicks, prepareAddonRows, releaseAddonRows } from '@/lib/booking-addons';
 
 /**
  * Parent pays for a booking. The price is resolved server-side from the
@@ -21,6 +22,8 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     booking_id?: string;
     group_id?: string | null;
+    /** Extra people ticked on the booking page (00273): [{ addon_id, quantity, names? }]. */
+    addons?: unknown;
   };
 
   const { supabase, user } = await getAuthedContext(request);
@@ -98,6 +101,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'This class is free — no payment needed' }, { status: 400 });
   }
 
+  // Add-ons ticked alongside the booking (00273). Validated and priced here, before anything else is
+  // touched, so a bad pick leaves the seats exactly as they were. They are headcount, not seats, so
+  // they ride on this same checkout and never affect capacity.
+  const picks = normalisePicks(body.addons);
+  let addonRowIds: string[] = [];
+  let addonLineItems: Array<{
+    price_data: { currency: 'sgd'; unit_amount: number; product_data: { name: string } };
+    quantity: number;
+  }> = [];
+  let addonCents = 0;
+  if (picks.length > 0 && activity?.provider_id) {
+    const { data: act } = await admin
+      .from('activity_sessions')
+      .select('activity_id')
+      .eq('id', booking.session_id)
+      .maybeSingle();
+    const prepared = await prepareAddonRows(admin, {
+      bookingId: booking.id,
+      userId: user.id,
+      activityId: act?.activity_id ?? '',
+      activityTitle: activity.title,
+      providerId: activity.provider_id,
+      picks,
+    });
+    if (!prepared.ok) return NextResponse.json({ error: prepared.error }, { status: prepared.status });
+    addonRowIds = prepared.rowIds;
+    addonLineItems = prepared.lineItems;
+    addonCents = prepared.totalCents;
+  }
+
   // Paying to claim a freed seat from the waitlist ("Pay now"): hold the
   // seat BEFORE sending the parent to Stripe. claim_waitlist_seats (00197)
   // moves the seats to pending under the session lock, so two parents can
@@ -166,6 +199,7 @@ export async function POST(request: Request) {
         },
         quantity: seatCount,
       },
+      ...addonLineItems,
     ],
     metadata: {
       kind: 'booking',
@@ -175,6 +209,8 @@ export async function POST(request: Request) {
       // (00104) has waitlisted seats under the same group id that must NOT be
       // flipped to confirmed by the webhook.
       seat_ids: seatIds.join(','),
+      // Add-on purchase rows to mark paid with this checkout (00273).
+      ...(addonRowIds.length ? { addon_row_ids: addonRowIds.join(',') } : {}),
     },
     // session_id lets the app reconcile the payment on return even if the
     // Stripe webhook is delayed or misconfigured (see /api/stripe/reconcile).
@@ -221,7 +257,7 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (provider?.stripe_account_id && provider.payouts_enabled) {
       const terms = await getTerms(admin, activity.provider_id);
-      const split = computeSplit(amountCents, terms);
+      const split = computeSplit(amountCents + addonCents, terms);
       connect = {
         payment_intent_data: {
           application_fee_amount: split.applicationFeeCents,
@@ -231,6 +267,12 @@ export async function POST(request: Request) {
     }
   }
 
-  const session = await getStripe().checkout.sessions.create({ ...params, ...connect });
-  return NextResponse.json({ url: session.url });
+  try {
+    const session = await getStripe().checkout.sessions.create({ ...params, ...connect });
+    return NextResponse.json({ url: session.url });
+  } catch (e) {
+    // No checkout exists, so the add-on rows prepared for it would never be paid or expired.
+    if (addonRowIds.length) await releaseAddonRows(admin, addonRowIds);
+    throw e;
+  }
 }

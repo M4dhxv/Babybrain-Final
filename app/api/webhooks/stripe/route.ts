@@ -15,6 +15,7 @@ import { sendPaymentAlert } from '@/lib/payment-alert';
 import { welcomeIfSignedUpPaid } from '@/lib/signup-plan';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
+import { addonRowIdsFromMetadata, releaseAddonRows, settleAddonRows } from '@/lib/booking-addons';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -388,6 +389,8 @@ export async function POST(request: Request) {
             .eq('payment_status', 'none');
         }
       }
+      // Add-on rows created for this checkout never got paid (00273): drop them. A paid row is never touched.
+      await releaseAddonRows(admin, addonRowIdsFromMetadata(expired.metadata));
       break;
     }
 
@@ -418,6 +421,9 @@ export async function POST(request: Request) {
         } else if (bookingId) {
           await admin.from('bookings').update(patch).eq('id', bookingId).eq('payment_status', 'none');
         }
+      }
+      if (failed.metadata?.kind === 'booking' || failed.metadata?.kind === 'booking_addon') {
+        await releaseAddonRows(admin, addonRowIdsFromMetadata(failed.metadata));
       }
       break;
     }
@@ -506,6 +512,9 @@ export async function POST(request: Request) {
         // is kept and later redeemed as a class at the same vendor.
         // provider_id is stamped on the booking by handle_booking_insert.
         const earnedIds = [...confirmedIds, ...tokenIds];
+        // Add-ons ticked at booking time ride on the same checkout (00273), so their money is part
+        // of this payment intent's gross.
+        const addons = await settleAddonRows(admin, addonRowIdsFromMetadata(session.metadata), paymentIntent);
         if (earnedIds.length > 0) {
           const { data: booked } = await admin
             .from('bookings')
@@ -514,7 +523,8 @@ export async function POST(request: Request) {
           const rows = booked ?? [];
           const providerId = rows[0]?.provider_id ?? null;
           if (providerId) {
-            const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
+            const grossCents =
+              rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0) + addons.settledCents;
             await recordSale(admin, {
               providerId,
               source: 'booking',
@@ -532,6 +542,21 @@ export async function POST(request: Request) {
         const settled = await settleMonthlyInvoice(admin, session);
         if (!settled.ok) {
           return NextResponse.json({ error: 'Monthly invoice payment not recorded' }, { status: 500 });
+        }
+      }
+
+      // Add people to a booking already held (00273): the checkout pays for add-ons only.
+      if (kind === 'booking_addon') {
+        const paymentIntent = (session.payment_intent as string) ?? null;
+        const addons = await settleAddonRows(admin, addonRowIdsFromMetadata(session.metadata), paymentIntent);
+        if (addons.providerId && addons.settledCents > 0) {
+          await recordSale(admin, {
+            providerId: addons.providerId,
+            source: 'booking',
+            bookingId: addons.bookingId,
+            grossCents: addons.settledCents,
+            paymentIntentId: paymentIntent,
+          });
         }
       }
 

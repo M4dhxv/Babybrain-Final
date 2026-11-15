@@ -131,6 +131,21 @@ export default function PackagesPage() {
   const activities = data?.activities ?? [];
   // What a pack can be scoped to. `activities` (all of them) stays for naming
   // an existing pack's restriction, even if it points at an ineligible one.
+  // Classes with a companion included (00273): only a pack made for that class alone may cover them. Read
+  // separately so this page still loads on a database that doesn't have the column yet.
+  const [companionIds, setCompanionIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!provider) return;
+    let cancelled = false;
+    (supabase as unknown as { from: (t: string) => { select: (c: string) => { eq: (c: string, v: unknown) => { eq: (c: string, v: unknown) => { is: (c: string, v: null) => PromiseLike<{ data: unknown }> } } } } })
+      .from('activities')
+      .select('id')
+      .eq('provider_id', provider.id)
+      .eq('companion_enabled', true)
+      .is('archived_at', null)
+      .then(({ data }) => { if (!cancelled) setCompanionIds(((data ?? []) as { id: string }[]).map((r) => r.id)); });
+    return () => { cancelled = true; };
+  }, [provider]);
   const packEligibleActivities = activities.filter((a) => !PACK_INELIGIBLE_WIX_TYPES.has(a.wix_service_type ?? ''));
   const packs = data?.packs ?? [];
   const purchases = data?.purchases ?? [];
@@ -278,6 +293,15 @@ export default function PackagesPage() {
     const price = Number(packForm.price);
     if (!packForm.name.trim()) return setPackError('Give the pack a name.');
     if (needsClassScope && packForm.activity_ids.length === 0) return setPackError('Choose which classes this pack applies to — it was limited to events, courses or appointments, which no longer support packs.');
+    if (companionIds.length > 0 && (!editingPackId || packs.find((p) => p.id === editingPackId)?.active !== false)) {
+      const scope = packForm.activity_ids;
+      if (scope.length === 0) {
+        return setPackError('You have a class with a companion included. A pack for any class could be used on it, so choose the specific classes this pack covers (leaving the companion class out), or make a pack for that class alone.');
+      }
+      if (scope.length > 1 && scope.some((id) => companionIds.includes(id))) {
+        return setPackError('A class with a companion included needs a pack of its own. Choose just that class for this pack, or take it out of this one.');
+      }
+    }
     if (!credits || credits < 1) return setPackError('Credits must be at least 1.');
     if (packForm.price !== '' && (Number.isNaN(price) || price < 0)) return setPackError('Enter a valid price.');
     if (packForm.expiryMode === 'days' && (!packForm.validity_days || Number(packForm.validity_days) < 1)) return setPackError('Enter how many days the pack stays valid, or choose another expiry.');
@@ -603,6 +627,11 @@ export default function PackagesPage() {
                     >
                       {packEligibleActivities.map((a) => <Opt key={a.id} value={a.id}>{a.title}</Opt>)}
                     </MultiSelectField>
+                    {companionIds.length > 0 && (
+                      <p className="mt-1 max-w-xs text-xs text-gray-500">
+                        Classes with a companion included ({packEligibleActivities.filter((a) => companionIds.includes(a.id)).map((a) => a.title).join(', ') || 'none shown'}) can only have a pack of their own: pick that class alone.
+                      </p>
+                    )}
                   </div>
                   <div className="w-full sm:w-auto">
                     <label className="block text-xs font-medium text-gray-600 mb-1 text-center sm:text-left">Restrict to weekly slot (optional)</label>
