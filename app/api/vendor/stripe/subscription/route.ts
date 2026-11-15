@@ -134,10 +134,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // Reuse the provider's Stripe customer if it exists.
+  // Reuse the provider's Stripe customer if it exists. The commercial terms
+  // come along for the checkout's commission line: a negotiated deal
+  // (custom_terms) survives the plan change, so that's what they'll pay.
   const { data: sub } = await admin
     .from('subscriptions')
-    .select('stripe_customer_id')
+    .select('stripe_customer_id, custom_terms, commission_rate, commission_flat_cents, fee_payer')
     .eq('provider_id', providerId)
     .maybeSingle();
   const { data: provider } = await admin
@@ -226,7 +228,21 @@ export async function POST(request: Request) {
     allow_promotion_codes: true,
     // The Billing Portal cannot render arbitrary text, so the renewal and
     // commission terms are stated here, at the one point before money moves.
-    custom_text: { submit: { message: renewalTerms(plan, billing) } },
+    custom_text: {
+      submit: {
+        message: renewalTerms(
+          plan,
+          billing,
+          sub?.custom_terms && sub.commission_rate != null
+            ? {
+                rate: Number(sub.commission_rate),
+                flatCents: sub.commission_flat_cents ?? 0,
+                feePayer: sub.fee_payer === 'platform' ? 'platform' : 'vendor',
+              }
+            : null
+        ),
+      },
+    },
     metadata: { provider_id: providerId, kind: 'subscription', plan },
     success_url: vendorPageUrl(request, '/billing', 'status=success'),
     cancel_url: vendorPageUrl(request, '/billing', 'status=cancelled'),

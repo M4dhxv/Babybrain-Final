@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
-import { planMeta, nextPlan } from '@/lib/plans';
+import { planMeta, nextPlan, commissionLabel } from '@/lib/plans';
 import PayoutsCard from '@/components/PayoutsCard';
 
 const sgDate = (iso: string) =>
@@ -161,7 +161,7 @@ export default function BillingPage() {
                 </div>
                 <p className="text-xs text-gray-500 mb-3">{plan.tagline}</p>
                 <div className="text-sm font-bold text-[#FA4D8D]">{plan.price}</div>
-                <div className="text-xs text-gray-500">{plan.commission}</div>
+                <div className="text-xs text-gray-500">{commissionLabel(subscription?.plan, subscription)}</div>
               </div>
               {upgrade ? (
                 <div className="p-4 border border-purple-300 rounded-xl relative">
@@ -175,7 +175,7 @@ export default function BillingPage() {
                   <p className="text-xs text-gray-500 mb-3">{upgrade.tagline}</p>
                   <div className="text-sm font-bold text-purple-600">{upgrade.price}</div>
                   <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-500">{upgrade.commission}</div>
+                    <div className="text-xs text-gray-500">{commissionLabel(upgrade.key, subscription)}</div>
                     <button onClick={() => navigate('/plans')} className="text-xs font-semibold text-purple-700 hover:underline">
                       Upgrade →
                     </button>
