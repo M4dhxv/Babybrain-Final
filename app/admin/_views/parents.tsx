@@ -20,17 +20,17 @@ type ParentRowT = {
 type SurfaceT = 'app' | 'web' | 'both' | 'unknown';
 type DeviceT = { os: string; surface: SurfaceT; lastSeenAt: string };
 type AccountKind = 'test' | 'vendor_login' | 'vendor_parent' | 'parent';
-type ParentsPage = { rows: ParentRowT[]; total: number; withPush?: number; page: number; pages: number; pageSize: number };
+type ParentsPage = { rows: ParentRowT[]; total: number; withPush?: number; page: number; pages: number; pageSize: number; interestOptions?: { id: string; label: string }[] };
 export type ParentFilters = {
   q: string; plan: string; marketing: string; activity: string; has_children: string;
   joined_from: string; joined_to: string; child_min: string; child_max: string;
-  onboarded: string; min_spend: string; area: string; account: string; region: string; device: string; source: string; app: string; push: string;
+  onboarded: string; min_spend: string; area: string; account: string; region: string; interest: string; device: string; source: string; app: string; push: string;
 };
 const NO_FILTERS: ParentFilters = {
   q: '', plan: '', marketing: '', activity: '', has_children: '', joined_from: '', joined_to: '',
-  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '', device: '', source: '', app: '', push: '',
+  child_min: '', child_max: '', onboarded: '', min_spend: '', area: '', account: '', region: '', interest: '', device: '', source: '', app: '', push: '',
 };
-const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region', 'device', 'app', 'push', 'source'];
+const ADVANCED_FILTERS: (keyof ParentFilters)[] = ['has_children', 'child_min', 'child_max', 'joined_from', 'joined_to', 'min_spend', 'onboarded', 'area', 'region', 'interest', 'device', 'app', 'push', 'source'];
 /** The one badge an account carries. Parents carry none. */
 /** "today", "3 days ago", "5 weeks ago" - how long ago something happened. */
 const agoText = (iso: string) => {
@@ -123,7 +123,7 @@ type ParentDetailT = {
 };
 
 /** Everything held on one parent, with the test-account checkbox. */
-function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
+function ParentDetail({ id, onClose, onChanged, interestName }: { id: string; onClose: () => void; onChanged: () => void; interestName: (slug: string) => string }) {
   const [d, setD] = useState<ParentDetailT | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -285,7 +285,7 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
                   <div style={{ fontWeight: 800 }}>{c.name} <span style={{ color: C.muted, fontWeight: 600 }}>· {childAge(months)}</span></div>
                   {field('Date of birth', c.date_of_birth)}
                   {field('Gender', c.gender || dash)}
-                  {field('Interests', list(c.interests))}
+                  {field('Interests', list(c.interests?.map(interestName)))}
                   {field('Notes', c.notes || dash)}
                 </div>
               );
@@ -297,7 +297,7 @@ function ParentDetail({ id, onClose, onChanged }: { id: string; onClose: () => v
             {field('Preferred regions', d.preferences.preferred_regions?.length ? regionText(d.preferences.preferred_regions) : dash)}
             {field('Budget', d.preferences.budget_min != null || d.preferences.budget_max != null
               ? `${d.preferences.budget_min ?? 0} – ${d.preferences.budget_max ?? 'any'} SGD` : dash)}
-            {field('Interests', list(d.preferences.interests))}
+            {field('Interests', list(d.preferences.interests?.map(interestName)))}
           </> : <div style={{ color: C.muted, fontSize: 13 }}>None set.</div>)}
 
           {collapsible('packages', `Packages (${d.packages.length})`, d.packages.length === 0
@@ -399,6 +399,8 @@ export default function ParentsView() {
   const [exporting, setExporting] = useState(false);
   const [more, setMore] = useState(() => { const u = filtersFromUrl(); return ADVANCED_FILTERS.some((k) => u[k] && u[k] !== NO_FILTERS[k]); });
   const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('open'));
+  // Activity types as sign-up names them (from the server, kept once loaded so the filter doesn't flicker).
+  const [interestOpts, setInterestOpts] = useState<{ id: string; label: string }[]>([]);
   const cacheRef = useRef(new Map<string, ParentsPage>());
   const freshRef = useRef(false);
   const [extra, setExtra] = useState({ area: false, region: false, onboarded: false, last: false, device: false, app: false, push: false, active: false, since: false, source: false });
@@ -436,7 +438,7 @@ export default function ParentsView() {
     const fresh = freshRef.current;
     freshRef.current = false;
     adminFetch<ParentsPage>(`/api/admin/parents?${key}${fresh ? '&fresh=1' : ''}`)
-      .then((r) => { cacheRef.current.set(key, r); if (!stale) { setData(r); if (fresh) toast('Parents refreshed'); } })
+      .then((r) => { cacheRef.current.set(key, r); if (r.interestOptions?.length) setInterestOpts(r.interestOptions); if (!stale) { setData(r); if (fresh) toast('Parents refreshed'); } })
       .catch((e) => { if (!stale) setErr(e instanceof Error ? e.message : String(e)); })
       .finally(() => { if (!stale) setBusy(false); });
     return () => { stale = true; };
@@ -526,6 +528,11 @@ export default function ParentsView() {
               options={Object.entries(REGION_LABELS).map(([id, label]) => ({ id, label }))}
               selected={f.region.split(',').filter(Boolean)}
               onChange={(ids) => { setF((p) => ({ ...p, region: ids.join(',') })); setPage(1); }} width="fill" />
+            {/* Parents who picked ALL the chosen types (not any of them). */}
+            <MultiSelect label="Activity type (all selected)" placeholder="Any type"
+              options={interestOpts}
+              selected={f.interest.split(',').filter(Boolean)}
+              onChange={(ids) => { setF((p) => ({ ...p, interest: ids.join(',') })); setPage(1); }} width="fill" />
             <MultiSelect label="Device" placeholder="Any device"
               options={DEVICE_OPTIONS}
               selected={f.device.split(',').filter(Boolean)}
@@ -703,7 +710,7 @@ export default function ParentsView() {
         </div>
       )}
 
-      {openId && <ParentDetail id={openId} onClose={closeDetail} onChanged={() => { cacheRef.current.clear(); setF((p) => ({ ...p })); }} />}
+      {openId && <ParentDetail id={openId} interestName={(slug) => interestOpts.find((o) => o.id === slug)?.label ?? slug} onClose={closeDetail} onChanged={() => { cacheRef.current.clear(); setF((p) => ({ ...p })); }} />}
     </div>
   );
 }
