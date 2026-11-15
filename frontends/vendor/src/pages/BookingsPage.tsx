@@ -1,3 +1,4 @@
+import { SessionAddOns } from '@/components/SessionAddOns';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { LoadingRows } from '@/components/Skeletons';
@@ -1706,6 +1707,13 @@ export default function BookingsPage() {
                 </DropdownMenu>
               )}
             </div>
+            {activeTab === 'Bookings' && (
+              <SessionAddOns
+                sessionId={sessionId}
+                seatIds={booked.map((r) => r.booking_id)}
+                whoByBooking={new Map(booked.map((r) => [r.booking_id, r.parent_name ? `${r.child_name} (${r.parent_name})` : r.child_name]))}
+              />
+            )}
             <div className="space-y-2">
               {visibleBookings.map((b, idx) => (
                 <div key={b.booking_id} id={`roster-row-${b.booking_id}`} onClick={() => { setSelected(idx); if (activeTab === 'Bookings') setMobileDetail(true); }}

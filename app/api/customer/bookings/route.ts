@@ -45,6 +45,41 @@ async function autoCompensatedFor(admin: Admin, ids: string[]) {
   return new Set((data ?? []).map((t) => t.origin_booking_id).filter((id): id is string => !!id));
 }
 
+/** Extra people paid for on each booking (00273), keyed by the booking row they hang off. Loose
+ *  client: the table is newer than the generated database types. */
+async function addonsFor(admin: Admin, ids: string[]) {
+  const out = new Map<string, Array<{ id: string; name: string; quantity: number; unit_price_cents: number; person_names: string[]; person_ages: Array<number | null>; kind: 'companion' | 'additional' }>>();
+  if (!ids.length) return out;
+  const { data } = await (admin as unknown as { from: (t: string) => { select: (c: string) => { in: (c: string, v: string[]) => { eq: (c: string, v: string) => PromiseLike<{ data: unknown }> } } } })
+    .from('booking_addons')
+    .select('id, booking_id, name, quantity, unit_price_cents, person_names, person_ages, kind')
+    .in('booking_id', ids)
+    .eq('payment_status', 'paid');
+  for (const r of (data ?? []) as Array<{ id: string; booking_id: string; name: string; quantity: number; unit_price_cents: number; person_names: string[]; person_ages: Array<number | null>; kind: string | null }>) {
+    const list = out.get(r.booking_id) ?? [];
+    list.push({ id: r.id, name: r.name, quantity: r.quantity, unit_price_cents: r.unit_price_cents, person_names: r.person_names, person_ages: r.person_ages ?? [], kind: r.kind === 'companion' ? 'companion' : 'additional' });
+    out.set(r.booking_id, list);
+  }
+  return out;
+}
+
+/** Which of these activities include a free companion (00273), so "My bookings" can offer to edit
+ *  them. Read apart from BOOKING_COLUMNS so a database without the migration just yields none. */
+async function companionActivities(admin: Admin, activityIds: string[]) {
+  const out = new Map<string, { count: number; type: 'adult' | 'child' }>();
+  if (!activityIds.length) return out;
+  const { data, error } = await (admin as unknown as { from: (t: string) => { select: (c: string) => { in: (c: string, v: string[]) => { eq: (c: string, v: boolean) => PromiseLike<{ data: unknown; error: unknown }> } } } })
+    .from('activities')
+    .select('id, companion_count, companion_type')
+    .in('id', activityIds)
+    .eq('companion_enabled', true);
+  if (error) return out;
+  for (const r of (data ?? []) as Array<{ id: string; companion_count: number | null; companion_type: string | null }>) {
+    out.set(r.id, { count: r.companion_count ?? 1, type: r.companion_type === 'child' ? 'child' : 'adult' });
+  }
+  return out;
+}
+
 /** The ticket each seat of a Wix Events order holds (number + permanent QR
  *  target), keyed by booking id. A seat is one `bookings` row per ticket, and
  *  neither side can address the other individually, so they pair by sorted
@@ -379,7 +414,7 @@ export async function GET(request: Request) {
   // matches a waitlisted one (active-only, isActive above always keeps
   // waitlisted rows out of history) — running either for the scope that
   // can't use it would just be a wasted round trip.
-  const [redeemedByToken, autoCompensated, { claimable, openFree, termKinds }, eventTickets, eventAccess, bookingTermKinds] = await Promise.all([
+  const [redeemedByToken, autoCompensated, { claimable, openFree, termKinds }, eventTickets, eventAccess, bookingTermKinds, addonsByBooking, companionByActivity] = await Promise.all([
     redeemedTokensFor(admin, allIds),
     scope === 'history' ? autoCompensatedFor(admin, allIds) : Promise.resolve(new Set<string>()),
     scope === 'active'
@@ -388,6 +423,8 @@ export async function GET(request: Request) {
     eventTicketsFor(admin, user.id, rows),
     eventAccessFor(admin, user.id, rows),
     termKindsFor(admin, allIds),
+    addonsFor(admin, allIds),
+    companionActivities(admin, [...new Set(rows.map((r) => r.activity_sessions?.activity_id).filter((id): id is string => !!id))]),
   ]);
 
   const bookings = rows.map((r) => {
@@ -433,6 +470,10 @@ export async function GET(request: Request) {
       event_ticket: eventTickets.get(r.id) ?? null,
       // Wix Events: which order / RSVP this seat is, and whether the event is online.
       event_access: eventAccess.get(r.id) ?? null,
+      // Extra people paid for on this booking (00273); sits on the lead seat of a party.
+      addons: addonsByBooking.get(r.id) ?? [],
+      // The free companion this class includes with each ticket, or null (00273).
+      companion: (sess?.activity_id && companionByActivity.get(sess.activity_id)) || null,
       // A waitlisted booking with a seat waiting for it — show "Book now".
       can_claim: claimable.has(r.id),
       // The same on a free class, where "Book now" opens the booking page.

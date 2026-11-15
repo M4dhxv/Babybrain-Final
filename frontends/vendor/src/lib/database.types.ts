@@ -221,6 +221,11 @@ export type Database = {
           cancellation_refund_mode: 'refund' | 'none';
           booking_cutoff_minutes: number;
           info_request_enabled: boolean;
+          // 00273: companion mode and additional people; absent until that migration is applied.
+          companion_enabled?: boolean;
+          companion_count?: number;
+          companion_type?: 'adult' | 'child';
+          allow_additional_people?: boolean;
           info_request_prompt: string | null;
           // 00252: optional second question; absent until that migration is applied.
           info_request_prompt_2?: string | null;
@@ -285,6 +290,10 @@ export type Database = {
           cancellation_refund_mode?: 'refund' | 'none';
           booking_cutoff_minutes?: number;
           info_request_enabled?: boolean;
+          companion_enabled?: boolean;
+          companion_count?: number;
+          companion_type?: 'adult' | 'child';
+          allow_additional_people?: boolean;
           info_request_prompt?: string | null;
           info_request_prompt_2?: string | null;
           min_tickets_per_booking?: number | null;

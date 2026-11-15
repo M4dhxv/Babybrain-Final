@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type Stripe from 'stripe';
 import type { Database } from '@/types/database';
+import { companionSettingsFor, readCompanionMetadata, saveCompanions, validateCompanions } from '@/lib/companions';
 
 /**
  * Grants a pack's credits and, when the checkout carried a chosen class,
@@ -71,6 +72,42 @@ export async function purchasePackageAndBook(
   }
 
   const row = data[0] as { purchase_id: string; status: string; waitlisted_count: number; already_credited: boolean };
+
+  // Companion mode (00273): the companions the parent entered when buying the pack and booking this
+  // class in one go ride along in the checkout metadata; attach them to the seats just booked. Saving
+  // replaces, so the webhook and the return page both running can't double anyone up.
+  const companions = readCompanionMetadata(session.metadata);
+  if (companions.length > 0 && activitySessionId) {
+    try {
+      const { data: sess } = await admin
+        .from('activity_sessions')
+        .select('activities(id, provider_id)')
+        .eq('id', activitySessionId)
+        .maybeSingle();
+      const activity = (sess?.activities ?? null) as unknown as { id: string; provider_id: string | null } | null;
+      const { data: seats } = await admin
+        .from('bookings')
+        .select('id')
+        .eq('package_purchase_id', row.purchase_id)
+        .eq('session_id', activitySessionId)
+        .order('created_at', { ascending: true });
+      if (activity?.provider_id && seats && seats.length > 0) {
+        const settings = await companionSettingsFor(admin as never, activity.id);
+        const checked = settings ? validateCompanions(settings, seats.length, companions) : null;
+        if (settings && checked?.ok) {
+          await saveCompanions(admin as never, {
+            userId,
+            providerId: activity.provider_id,
+            seatIds: seats.map((s) => s.id),
+            type: settings.companion_type,
+            list: checked.list,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[purchasePackageAndBook] companions not saved:', e instanceof Error ? e.message : e);
+    }
+  }
   return {
     purchaseId: row.purchase_id,
     status: row.status,
