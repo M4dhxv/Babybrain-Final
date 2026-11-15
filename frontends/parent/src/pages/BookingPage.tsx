@@ -25,6 +25,10 @@ import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } fro
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
 import type { ActivitySession, ProviderPolicy } from "../lib/database.types";
+import { AddonPersonFields } from "../components/AddonPersonFields";
+import { CompanionFields } from "../components/CompanionFields";
+import { buildCompanions, companionProblem, type CompanionType } from "../lib/companions";
+import { anyAgeMismatch, missingAge, parseAge, rangeText } from "../lib/addonAges";
 
 /** One selectable row in the booking flow's "Choose your package" step. */
 /** A row in booking step 4 — name and price on the left, the action on the
@@ -264,6 +268,17 @@ export default function BookingPage() {
   // picks which to spend from; null defers to the oldest eligible one.
   const [selectedCreditId, setSelectedCreditId] = useState<string | null>(null);
   const [packs, setPacks] = useState<{ id: string; name: string; credits: number; price_cents: number; best_value: boolean; validity_days: number | null; expiry_date: string | null }[]>([]);
+  // Extra people the vendor offers on this activity, priced on top of the class (00273), and how many
+  // of each the parent has ticked (with optional names). Headcount only: never uses class capacity.
+  type AddonOffer = { id: string; name: string; price_cents: number; max_per_booking: number | null; min_age: number | null; max_age: number | null };
+  const [addonOffers, setAddonOffers] = useState<AddonOffer[]>([]);
+  const [addonQty, setAddonQty] = useState<Record<string, number>>({});
+  const [addonNames, setAddonNames] = useState<Record<string, string[]>>({});
+  const [addonAges, setAddonAges] = useState<Record<string, string[]>>({});
+  // Companion mode (00273): the free companion(s) each ticket includes, as flat lists indexed by
+  // ticket * companions-per-ticket + slot.
+  const [companionNames, setCompanionNames] = useState<string[]>([]);
+  const [companionAges, setCompanionAges] = useState<string[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
   const [payWith, setPayWith] = useState<string>(draft?.payWith ?? "single");
   // Weekly repeats when paying with pack credits: "also book the next N weeks at this time" (issues sheet 3 Oct).
@@ -389,6 +404,8 @@ export default function BookingPage() {
         ? []
         : rows
             .filter((p) => !p.activity_ids || p.activity_ids.length === 0 || p.activity_ids.includes(activity.id))
+            // Companion mode: only a pack made for this class alone is offered with it.
+            .filter((p) => activity.companion_enabled !== true || (p.activity_ids?.length === 1 && p.activity_ids[0] === activity.id))
             .filter(isPackOnSale);
       setPacks(applicable);
       // Arrived here with a pack already picked on the Activity page —
@@ -398,6 +415,23 @@ export default function BookingPage() {
       }
     });
   }, [activity?.provider_id, activity?.id, wantPackId, packagesNotOffered]);
+
+  // The vendor's add-ons for this activity (00273). Read straight from the table, which anyone may read
+  // while an add-on is active; nothing here is trusted for the price: the server prices every pick.
+  useEffect(() => {
+    if (!activity?.id) return;
+    let cancelled = false;
+    cacheFetch(`activity-addons:${activity.id}`, 120_000, () =>
+      (supabase as unknown as { from: (t: string) => { select: (c: string) => { eq: (c: string, v: unknown) => { eq: (c: string, v: unknown) => { order: (c: string) => PromiseLike<{ data: unknown }> } } } } })
+        .from("activity_addons")
+        .select("id, name, price_cents, max_per_booking, min_age, max_age")
+        .eq("activity_id", activity.id)
+        .eq("active", true)
+        .order("sort_order")
+        .then(({ data }) => (data ?? []) as AddonOffer[])
+    ).then((rows) => { if (!cancelled) setAddonOffers(rows); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [activity?.id]);
 
   // What this parent has already booked on this activity's sessions, so the
   // form can warn before putting the same child on the same class twice.
@@ -463,6 +497,8 @@ export default function BookingPage() {
   // chosen class and session slot (e.g. "Monday 4:00 pm only").
   function creditMatches(p: CreditPurchase, sess: ActivitySession | null) {
     if (p.activity_ids && p.activity_ids.length > 0 && !p.activity_ids.includes(activity?.id ?? "")) return false;
+    // Companion mode: only credits from a pack made for this class alone can be spent on it.
+    if (activity?.companion_enabled === true && !(p.activity_ids?.length === 1 && p.activity_ids[0] === activity.id)) return false;
     if (!sess) return p.allowed_weekday == null && !p.allowed_start_time;
     const sg = new Date(sess.starts_at);
     const sgWeekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
@@ -751,6 +787,26 @@ export default function BookingPage() {
   const coversDays = isMultiDay && selectedTicketType ? ticketDaysCovered(selectedTicketType.name) : null;
   const ticketCount = isMultiDay && coversDays === 1 ? count * Math.max(daysPicked.length, 1) : count;
   const total = price != null ? price * ticketCount : null;
+  // Add-ons apply to an ordinary native class paid per session. Wix events/classes and courses price
+  // people their own way, and a pack purchase books through its own route: people are added after.
+  const addonsAvailable =
+    addonOffers.length > 0 && activity?.allow_additional_people === true && !isEvent && !isCourse && !sessionId?.startsWith("wix:") && payWith === "single";
+  const addonPicks = addonsAvailable
+    ? addonOffers
+        .filter((o) => (addonQty[o.id] ?? 0) > 0)
+        .map((o) => ({ addon_id: o.id, quantity: addonQty[o.id], names: Array.from({ length: addonQty[o.id] }, (_, i) => (addonNames[o.id]?.[i] ?? "").trim()), ages: Array.from({ length: addonQty[o.id] }, (_, i) => parseAge(addonAges[o.id]?.[i])) }))
+    : [];
+  // An add-on with an age range needs an age for every person...
+  const addonAgeMissing = addonsAvailable && addonOffers.some((o) => missingAge(o, addonQty[o.id] ?? 0, addonAges[o.id]));
+  // ...and an age outside the add-on's range blocks payment until the person is moved to the right add-on.
+  const addonAgeMismatch = addonsAvailable && anyAgeMismatch(addonOffers, addonQty, addonAges);
+  // Companion mode: free people included with each ticket. Works with every way of paying, including packs.
+  const companionOn = activity?.companion_enabled === true && !isEvent && !isCourse && !sessionId?.startsWith("wix:");
+  const companionSlots = Math.max(1, Math.min(4, activity?.companion_count ?? 1));
+  const companionType: CompanionType = activity?.companion_type === "child" ? "child" : "adult";
+  const companions = companionOn ? buildCompanions(count, companionSlots, companionNames, companionAges) : [];
+  const companionIssue = companionOn ? companionProblem(companionType, count, companionSlots, companionNames, companionAges) : null;
+  const addonTotal = addonPicks.reduce((sum, p) => sum + (addonOffers.find((o) => o.id === p.addon_id)?.price_cents ?? 0) * p.quantity, 0) / 100;
   /* "Best value" used to mean "cheaper per class than paying single-class
      price" — which tags *every* pack that clears that (usually low) bar, not
      the actual best one. A 5-session pack at $50/class and a 10-session pack
@@ -874,6 +930,7 @@ export default function BookingPage() {
       return;
     }
     setBusy(true);
+    let companionsFailed = false;
     let status: string | null = null;
     // Seats from a multi-child party that didn't fit and stayed on the
     // waitlist (00136) — shown on /booked alongside a non-'waitlisted'
@@ -992,6 +1049,7 @@ export default function BookingPage() {
           return;
         }
         status = (data as string | null) ?? "confirmed";
+        if (!(await saveCompanionsFor({}))) companionsFailed = true;
       }
     } else if (sessionId.startsWith("wix:")) {
       // Wix-linked activity: the slot lives in Wix, not activity_sessions —
@@ -1073,6 +1131,13 @@ export default function BookingPage() {
       }
       const { group_id: groupId, status: partyStatus, waitlisted_count: partyWaitlisted } =
         data as { group_id: string | null; status: string; waitlisted_count: number };
+      // Companions (free, 00273) are saved against the seats just made, before any hand-off to Stripe,
+      // so the vendor has them whether or not the payment page is reached.
+      if (companions.length > 0 && !(await saveCompanionsFor({ groupId }))) {
+        setBusy(false);
+        setErr("Your booking was started, but we couldn't save the companion details. Please try again.");
+        return;
+      }
       // Paid class → hand off to Stripe Checkout; the route charges only the
       // seats that fit and the webhook confirms just those (and computes its
       // own leftover-waitlist count for the success page). Free class stays
@@ -1083,6 +1148,7 @@ export default function BookingPage() {
           const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", {
             group_id: groupId,
             session_id: sessionId,
+            ...(addonPicks.length ? { addons: addonPicks } : {}),
           });
           if (url) {
             window.location.href = url;
@@ -1099,6 +1165,14 @@ export default function BookingPage() {
       status = partyStatus ?? "pending";
       wl = partyWaitlisted ?? 0;
     }
+    // Add-ons on a booking that did not go through a card checkout (a free class, a make-up token):
+    // charge just the add-ons now. A paid class took them in its own checkout above.
+    let addonsFailed = false;
+    if (!isEvent && !sessionId.startsWith("wix:") && status !== "waitlisted") {
+      const outcome = await chargeAddonsAfterBooking();
+      if (outcome === "redirected") return;
+      addonsFailed = outcome === "failed";
+    }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
@@ -1114,11 +1188,53 @@ export default function BookingPage() {
       venue: displayVenue ?? "",
       staff: displayStaff ?? "",
       ...(status !== "waitlisted" && wl > 0 ? { wl: String(wl) } : {}),
+      ...(addonsFailed ? { addons: "failed" } : {}),
+      ...(companionsFailed ? { companions: "failed" } : {}),
     });
     // This path can have just redeemed a make-up token — don't leave the
     // Profile tab's cached token list showing it as still unredeemed.
     if (auth?.user?.id) cacheInvalidate(`profile:tokens:${auth.user.id}`);
     goTo(`/booked?${q.toString()}`);
+  }
+
+  /** Save the companions the parent entered against the booking just made (migration 00273).
+   *  `groupId` targets a party made by book_party; otherwise the parent's newest booking on the session. */
+  async function saveCompanionsFor(target: { groupId?: string | null; sessionKey?: string }): Promise<boolean> {
+    if (companions.length === 0) return true;
+    try {
+      await apiPost("/api/bookings/companions", {
+        ...(target.groupId ? { group_id: target.groupId } : { session_id: target.sessionKey ?? sessionId }),
+        companions,
+      });
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  }
+
+  /** Charge the ticked add-ons for a booking that was just made without a card checkout (a free class,
+   *  a make-up token, a pack credit). The booking is found by session: it is the parent's newest live
+   *  booking on it. "redirected" means the browser is leaving for Stripe. */
+  async function chargeAddonsAfterBooking(): Promise<"none" | "redirected" | "done" | "failed"> {
+    if (addonPicks.length === 0) return "none";
+    setBusy(true);
+    try {
+      const r = await apiPost<{ url?: string; done?: boolean }>("/api/bookings/addons/checkout", {
+        session_id: sessionId,
+        addons: addonPicks,
+      });
+      if (r.url) {
+        window.location.href = r.url;
+        return "redirected";
+      }
+      setBusy(false);
+      return "done";
+    } catch (e) {
+      console.error(e);
+      setBusy(false);
+      return "failed";
+    }
   }
 
   async function payWithPackage() {
@@ -1131,6 +1247,7 @@ export default function BookingPage() {
       return;
     }
     setBusy(true);
+    let companionsFailed = false;
     let status: string;
     // Seats that didn't fit and landed on the waitlist while the rest of the
     // party got in on this same credit purchase (00136) — every credit is
@@ -1186,6 +1303,7 @@ export default function BookingPage() {
       const redeemed = data as { status: string; waitlisted_count: number } | null;
       status = redeemed?.status ?? "confirmed";
       wl = redeemed?.waitlisted_count ?? 0;
+      if (!(await saveCompanionsFor({}))) companionsFailed = true;
       // "Also book the next N weeks": the same booking on each later session, one credit per seat each,
       // stopping at the first refusal and saying how far it got.
       for (const extra of repeatCandidates.slice(0, repeatCount)) {
@@ -1211,9 +1329,16 @@ export default function BookingPage() {
         }
         repeatBooked += 1;
         wl += (more as { waitlisted_count: number } | null)?.waitlisted_count ?? 0;
+        if (!(await saveCompanionsFor({ sessionKey: extra.id }))) companionsFailed = true;
       }
     }
     setBusy(false);
+    let addonsFailed = false;
+    if (!sessionId.startsWith("wix:") && status !== "waitlisted") {
+      const outcome = await chargeAddonsAfterBooking();
+      if (outcome === "redirected") return;
+      addonsFailed = outcome === "failed";
+    }
     const q = new URLSearchParams({
       title: activity?.title ?? "your class",
       slug: activity?.slug ?? "",
@@ -1230,6 +1355,8 @@ export default function BookingPage() {
       venue: displayVenue ?? "",
       staff: displayStaff ?? "",
       ...(status !== "waitlisted" && wl > 0 ? { wl: String(wl) } : {}),
+      ...(addonsFailed ? { addons: "failed" } : {}),
+      ...(companionsFailed ? { companions: "failed" } : {}),
     });
     // Just spent a package credit — don't leave the Profile tab's cached
     // packages list showing the pre-redemption remaining count.
@@ -1248,6 +1375,10 @@ export default function BookingPage() {
     // Buying a pack books the selected class too, so the same paperwork applies.
     const consent = consentProblem();
     if (consent) { setErr(consent); return; }
+    if (addonAgeMismatch) {
+      setErr("An extra person's age doesn't match the add-on you chose. Fix the age or pick the right add-on above.");
+      return;
+    }
     if (childAgeMismatch) {
       setErr(`${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`);
       return;
@@ -1287,6 +1418,7 @@ export default function BookingPage() {
           ? { guest_names: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
           : {}),
         policies_accepted: acceptedPolicies,
+        ...(companions.length ? { companions } : {}),
         ...(medicalNote.trim() ? { medical_disclosure: medicalNote.trim() } : {}),
         ...(infoAnswer ? { info_response: infoAnswer } : {}),
       });
@@ -1344,7 +1476,7 @@ export default function BookingPage() {
   // Greys the Pay button out as a hint that something's still missing —
   // it stays tappable in that state (see the button below) so a tap
   // explains exactly what, rather than silently doing nothing.
-  const bookingIncomplete = !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null;
+  const bookingIncomplete = !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null || addonAgeMissing || addonAgeMismatch || companionIssue != null;
 
   /** Status of this child's existing booking on the chosen session, if any. */
   const existingBookingStatus = sessionId ? existingBookings.get(`${sessionId}:${bookChildId ?? ""}`) : undefined;
@@ -1366,6 +1498,14 @@ export default function BookingPage() {
     const consent = consentProblem();
     if (consent) {
       setErr(consent);
+      return;
+    }
+    if (companionIssue) {
+      setErr(companionIssue);
+      return;
+    }
+    if (addonAgeMissing) {
+      setErr("Enter an age for each extra person so the provider knows who is coming.");
       return;
     }
     if (childAgeMismatch) {
@@ -1410,14 +1550,16 @@ export default function BookingPage() {
           ? `Get ${ticketCount > 1 ? `${ticketCount} tickets` : "ticket"} — ${selectedTicketType?.currency ?? ""} ${total.toFixed(2)}`
           : "Get ticket"
       : redeemToken
-        ? "Confirm with make-up token"
+        ? addonTotal > 0 ? `Confirm with make-up token and pay $${addonTotal.toFixed(2)} for extra people` : "Confirm with make-up token"
         : payWith === "credit"
-          ? "Confirm with a package credit"
+          ? addonTotal > 0 ? `Confirm with a package credit and pay $${addonTotal.toFixed(2)} for extra people` : "Confirm with a package credit"
           : selectedPack
             ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
             : total != null && total > 0
-              ? `Pay $${total.toFixed(2)}`
-              : "Confirm booking";
+              ? `Pay $${(total + addonTotal).toFixed(2)}`
+              : addonTotal > 0
+                ? `Confirm booking and pay $${addonTotal.toFixed(2)} for extra people`
+                : "Confirm booking";
   // What the summary sidebar and the "Total amount" block actually show —
   // must track payLabel's own amount, not always the single-class price.
   // Buying a pack used to bypass this page entirely (a separate "Buy pack"
@@ -1425,7 +1567,9 @@ export default function BookingPage() {
   // a pack's price; now that it goes through this same CTA, showing the
   // single-class total while the button says "Buy pack — $500" read as a
   // straight contradiction (QA).
-  const displayTotal = redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : total;
+  const displayTotal = redeemToken || payWith === "credit"
+    ? addonTotal
+    : selectedPack ? selectedPack.price_cents / 100 : total != null ? total + addonTotal : addonTotal > 0 ? addonTotal : total;
 
   // Unlike the activity-detail page, booking needs sessions to pick a
   // default date/time immediately — wait for both phases, same as this
@@ -1701,6 +1845,58 @@ export default function BookingPage() {
                               className="w-full rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
                             />
                           ))}
+                        </div>
+                      </section>
+                    )}
+                    {companionOn && (
+                      <CompanionFields
+                        type={companionType}
+                        slots={companionSlots}
+                        tickets={count}
+                        ticketLabels={Array.from({ length: count }, (_, s) => (s === 0 ? bookChild?.name ?? "" : (guestNames[s - 1] ?? "").trim()))}
+                        names={companionNames}
+                        ages={companionAges}
+                        onName={(i, v) => setCompanionNames((l) => { const next = [...l]; next[i] = v; return next; })}
+                        onAge={(i, v) => setCompanionAges((l) => { const next = [...l]; next[i] = v; return next; })}
+                      />
+                    )}
+                    {addonsAvailable && (
+                      <section>
+                        <h3 className="mb-2 text-lg font-black">Bring someone along <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
+                        <p className="mb-3 text-sm font-semibold text-[#59658d]">
+                          {activity?.provider_name?.trim() || "The provider"} lets you add people to this booking at an extra price. They don&rsquo;t take a class place.
+                        </p>
+                        <div className="space-y-3">
+                          {addonOffers.map((o) => {
+                            const cap = Math.min(o.max_per_booking ?? 10, 10);
+                            const qty = addonQty[o.id] ?? 0;
+                            return (
+                              <div key={o.id} className="rounded-[12px] border border-[#DCD2D5] bg-white p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="min-w-0">
+                                    <span className="block font-black">{o.name}</span>
+                                    <span className="text-sm font-semibold text-[#59658d]">{o.price_cents > 0 ? `+$${(o.price_cents / 100).toFixed(2)} each` : "No extra charge"}{rangeText(o) ? ` · ${rangeText(o)}` : ""}</span>
+                                  </span>
+                                  <div className="inline-grid shrink-0 grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-lg font-black">
+                                    <button type="button" aria-label={`Remove one ${o.name}`} disabled={qty <= 0} onClick={() => setAddonQty((m) => ({ ...m, [o.id]: Math.max(0, (m[o.id] ?? 0) - 1) }))} className="h-10 w-10 disabled:opacity-30">-</button>
+                                    <span className="grid h-10 w-10 place-items-center">{qty}</span>
+                                    <button type="button" aria-label={`Add one ${o.name}`} disabled={qty >= cap} onClick={() => setAddonQty((m) => ({ ...m, [o.id]: Math.min(cap, (m[o.id] ?? 0) + 1) }))} className="h-10 w-10 disabled:opacity-30">+</button>
+                                  </div>
+                                </div>
+                                {qty > 0 && (
+                                  <AddonPersonFields
+                                    offer={o}
+                                    offers={addonOffers}
+                                    qty={qty}
+                                    names={addonNames[o.id]}
+                                    ages={addonAges[o.id]}
+                                    onName={(i, v) => setAddonNames((m) => { const list = [...(m[o.id] ?? [])]; list[i] = v; return { ...m, [o.id]: list }; })}
+                                    onAge={(i, v) => setAddonAges((m) => { const list = [...(m[o.id] ?? [])]; list[i] = v; return { ...m, [o.id]: list }; })}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </section>
                     )}

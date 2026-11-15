@@ -54,6 +54,7 @@ import { AgeRangeField } from '@/components/AgeRangeField';
 import { Switch } from '@/components/ui/switch';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PoliciesManager } from '@/components/PoliciesManager';
+import { AddOnsManager } from '@/components/AddOnsManager';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -226,6 +227,9 @@ const emptyForm = {
   info_request_prompt_2: '',
   // 00266 — fewest / most tickets one booking may take. '' = no limit.
   min_tickets_per_booking: '', max_tickets_per_booking: '',
+  // 00273 — companion mode (free people included with each ticket) and additional (paid) people.
+  companion_enabled: false, companion_count: '1', companion_type: 'adult' as 'adult' | 'child',
+  allow_additional_people: false,
   what_to_bring: '', confirmation_message: '',
 };
 
@@ -1475,6 +1479,10 @@ export default function ActivitiesPage() {
       info_request_prompt: a.info_request_prompt ?? '',
       info_request_prompt_2: a.info_request_prompt_2 ?? '',
       min_tickets_per_booking: a.min_tickets_per_booking != null ? String(a.min_tickets_per_booking) : '',
+      companion_enabled: a.companion_enabled ?? false,
+      companion_count: String(a.companion_count ?? 1),
+      companion_type: (a.companion_type ?? 'adult') as 'adult' | 'child',
+      allow_additional_people: a.allow_additional_people ?? false,
       max_tickets_per_booking: a.max_tickets_per_booking != null ? String(a.max_tickets_per_booking) : '',
       what_to_bring: a.what_to_bring ?? '',
       confirmation_message: a.confirmation_message ?? '',
@@ -1598,6 +1606,20 @@ export default function ActivitiesPage() {
     }
     const cutoffErr = cutoffTooLong(form.booking_cutoff_minutes);
     if (cutoffErr) { setFormError(cutoffErr); return; }
+    // Additional people (00273) need at least one price set by the vendor, otherwise parents are shown nothing.
+    if (!isWixLinked && form.allow_additional_people) {
+      if (!editingId) { setFormError('Save this activity first, then switch on additional people and set their price.'); return; }
+      const { data: priced } = await (supabase as unknown as { from: (t: string) => { select: (c: string) => { eq: (c: string, v: unknown) => { eq: (c: string, v: unknown) => { gt: (c: string, v: number) => PromiseLike<{ data: unknown }> } } } } })
+        .from('activity_addons')
+        .select('id')
+        .eq('activity_id', editingId)
+        .eq('active', true)
+        .gt('price_cents', 0);
+      if (((priced ?? []) as unknown[]).length === 0) {
+        setFormError('Set a price for additional people (Add a price), or switch them off.');
+        return;
+      }
+    }
     setSaving(true);
     setFormError(null);
     // The activity's address/postal_code/lat/lng are denormalized from its
@@ -1700,6 +1722,16 @@ export default function ActivitiesPage() {
       // Same for the ticket limits (00266): written only when set now or before.
       ...(minTickets != null || maxTickets != null || editingActivity?.min_tickets_per_booking != null || editingActivity?.max_tickets_per_booking != null
         ? { min_tickets_per_booking: minTickets, max_tickets_per_booking: maxTickets }
+        : {}),
+      // Companion mode and additional people (00273): written only when switched on now or already known
+      // to the row, so saving an activity still works on a database without that migration.
+      ...(form.companion_enabled || form.allow_additional_people || editingActivity?.companion_enabled !== undefined
+        ? {
+            companion_enabled: form.companion_enabled,
+            companion_count: Math.max(1, Math.min(4, Math.round(Number(form.companion_count) || 1))),
+            companion_type: form.companion_type,
+            allow_additional_people: form.allow_additional_people,
+          }
         : {}),
       what_to_bring: form.what_to_bring.trim() || null,
       confirmation_message: form.confirmation_message.trim() || null,
@@ -2775,6 +2807,75 @@ export default function ActivitiesPage() {
                 </div>
               )}
             </div>
+
+            {/* Companion mode (migration 00273): free people included with every ticket. */}
+            {!isWixLinked && provider && (
+              <div className="space-y-3 pt-2 border-t border-gray-100">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Include a free companion with each ticket</div>
+                    <div className="text-xs text-gray-500">
+                      For classes where a child comes with a grown-up (or a friend). Every ticket covers the child plus the companion(s) below, at no extra cost. They don&rsquo;t use a class place.
+                    </div>
+                  </div>
+                  <Switch checked={form.companion_enabled} disabled={!canManage} onCheckedChange={(v) => setForm({ ...form, companion_enabled: v })} />
+                </div>
+                {form.companion_enabled && (
+                  <div className="space-y-3 rounded-xl border border-pink-200 bg-pink-50/40 p-3">
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-600">The companion is</label>
+                        <div className="inline-flex overflow-hidden rounded-xl border border-gray-200 text-sm">
+                          {(['adult', 'child'] as const).map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              disabled={!canManage}
+                              onClick={() => setForm({ ...form, companion_type: t })}
+                              className={`px-4 py-2 ${form.companion_type === t ? 'bg-pink-500 font-medium text-white' : 'bg-white text-gray-700 hover:bg-pink-50'}`}
+                            >
+                              {t === 'adult' ? 'An adult' : 'A child'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="w-32">
+                        <label className="mb-1 block text-xs font-medium text-gray-600">Free per ticket</label>
+                        <NumberInput min="1" max="4" className={inputCls} value={form.companion_count} disabled={!canManage} onChange={(e) => setForm({ ...form, companion_count: e.target.value })} />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Parents are shown a notice and a name and age box for each companion. If they enter a name, an age is required so we can check it
+                      {form.companion_type === 'adult' ? ' is an adult (15 and over)' : ' is a child (12 and under)'}. A wrong age stops the booking. A booking made for a child alone is fine; they can leave the companion blank.
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Packs: a pack for this class must be for this class only, and parents can&rsquo;t add additional people to a booking made with a pack.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Additional people with their own prices (migration 00273). Off by default. */}
+            {!isWixLinked && provider && (
+              <div className="space-y-3 pt-2 border-t border-gray-100">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Let parents add additional people for an extra price</div>
+                    <div className="text-xs text-gray-500">
+                      Anyone beyond the free companion, such as a second child or another adult. You set each price, and they can be added to a booking a parent already holds. Not available on bookings made with a pack.
+                    </div>
+                  </div>
+                  <Switch checked={form.allow_additional_people} disabled={!canManage || !editingId} onCheckedChange={(v) => setForm({ ...form, allow_additional_people: v })} />
+                </div>
+                {!editingId && (
+                  <p className="text-xs text-gray-500">Save this activity first, then edit it to switch this on and set a price. A price is required.</p>
+                )}
+                {form.allow_additional_people && editingId && (
+                  <AddOnsManager activityId={editingId} providerId={provider.id} canManage={canManage} />
+                )}
+              </div>
+            )}
 
             {/* Bespoke information request (QA 21/08) */}
             <div className="space-y-4 pt-2 border-t border-gray-100">

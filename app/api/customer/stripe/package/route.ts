@@ -4,6 +4,7 @@ import { getAuthedContext } from '@/lib/api-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { computeSplit, getTerms } from '@/lib/commercials';
+import { companionSettingsFor, packCompanionMetadata, validateCompanions } from '@/lib/companions';
 
 /**
  * Parent buys a class package (multi-session pack). One-off Stripe Checkout;
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
     policies_accepted: policiesAccepted,
     medical_disclosure: medicalDisclosure,
     info_response: infoResponse,
+    companions: rawCompanions,
   } = (await request.json().catch(() => ({}))) as {
     package_id?: string;
     activity_session_id?: string;
@@ -41,6 +43,8 @@ export async function POST(request: Request) {
     policies_accepted?: string[];
     medical_disclosure?: string;
     info_response?: string;
+    /** Companion mode: [{ seat, name, age }] for the class being booked with the pack (00273). */
+    companions?: unknown;
   };
   if (!packageId) {
     return NextResponse.json({ error: 'package_id required' }, { status: 400 });
@@ -56,7 +60,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: pkg } = await admin
     .from('packages')
-    .select('id, name, credits, price_cents, active, provider_id, starts_at, expiry_date')
+    .select('id, name, credits, price_cents, active, provider_id, starts_at, expiry_date, activity_ids')
     .eq('id', packageId)
     .maybeSingle();
   if (!pkg || !pkg.active) {
@@ -81,6 +85,26 @@ export async function POST(request: Request) {
       { error: `This pack only has ${pkg.credits} credit${pkg.credits === 1 ? '' : 's'} — not enough for ${quantity} children.` },
       { status: 400 }
     );
+  }
+
+  // Companion mode (00273): a pack bought for a companion class must be that class's own pack, and the
+  // companions entered here are checked now (so nothing invalid reaches Stripe) and carried in the
+  // checkout metadata to be attached to the seats the webhook books.
+  let companionMeta: Record<string, string> = {};
+  if (activitySessionId) {
+    const { data: sessRow } = await admin.from('activity_sessions').select('activity_id').eq('id', activitySessionId).maybeSingle();
+    const settings = sessRow?.activity_id ? await companionSettingsFor(admin, sessRow.activity_id) : null;
+    if (settings?.companion_enabled) {
+      const ids = (pkg as { activity_ids?: string[] | null }).activity_ids ?? [];
+      if (ids.length !== 1 || ids[0] !== sessRow?.activity_id) {
+        return NextResponse.json({ error: "This class includes a companion, so only a pack made for this class alone can be used with it." }, { status: 400 });
+      }
+    }
+    if (settings) {
+      const checked = validateCompanions(settings, quantity, rawCompanions);
+      if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+      companionMeta = packCompanionMetadata(checked.list);
+    }
   }
 
   // The class booked alongside the pack must be bookable right now. The seat is
@@ -194,6 +218,7 @@ export async function POST(request: Request) {
         ? {
             activity_session_id: activitySessionId,
             quantity: String(quantity),
+            ...companionMeta,
             ...(childId ? { child_id: childId } : {}),
             ...(guestNames && guestNames.length
               ? { guest_names: JSON.stringify(guestNames.slice(0, 19).map((n) => String(n).slice(0, 80))) }

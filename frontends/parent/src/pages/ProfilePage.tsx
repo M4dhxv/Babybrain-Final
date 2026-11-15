@@ -68,6 +68,10 @@ import { lazyRoute } from "../lib/lazyRoute";
 import { requestInstall } from "../lib/install";
 import { PushPreferences } from "../components/PushPreferences";
 import { getPushState, subscribeToPush, unsubscribeFromPush, type PushState } from "../lib/push";
+import { AddonPersonFields } from "../components/AddonPersonFields";
+import { anyAgeMismatch, missingAge, parseAge, rangeText } from "../lib/addonAges";
+import { CompanionFields } from "../components/CompanionFields";
+import { buildCompanions, companionProblem, type CompanionType } from "../lib/companions";
 
 const MessagesTab = lazyRoute(
   () => import("../components/MessagesTab").then((m) => ({ default: m.MessagesTab })),
@@ -124,6 +128,10 @@ type CustomerBookingRow = {
   event_ticket?: { orderId: string; ticketNumber: string; checkInUrl: string | null } | null;
   // Wix Events: the order / RSVP behind this seat, and whether the event is online.
   event_access?: { orderId: string | null; rsvpId: string | null; online: boolean } | null;
+  // Extra people paid for on this booking (00273); sits on one seat of a party.
+  addons?: { id: string; name: string; quantity: number; unit_price_cents: number; person_names: string[]; person_ages?: Array<number | null>; kind?: "companion" | "additional" }[];
+  // The free companion this class includes with each ticket, or null (00273).
+  companion?: { count: number; type: CompanionType } | null;
 };
 
 type BookingItem = {
@@ -187,6 +195,10 @@ type BookingItem = {
   // Per live seat, e.g. ["confirmed","confirmed","waitlisted"] — a party can
   // straddle a session's capacity, so the seats don't all share `status`.
   seatStatuses: string[];
+  /** Extra people paid for on this booking, e.g. an adult or a sibling (00273). Never take a class place. */
+  addons: { id: string; seatBookingId: string; kind: "companion" | "additional"; addonName: string; quantity: number; personNames: string[]; personAges: Array<number | null> }[];
+  /** Free companions this class includes with each ticket (00273), or null when it has none. */
+  companion: { count: number; type: CompanionType } | null;
 };
 /** A session the reschedule picker offers; `full` = not enough places for the whole party. */
 type ReschedSession = { id: string; starts_at: string; ends_at: string | null; teacher_name: string | null; studio: string | null; full: boolean };
@@ -2083,6 +2095,10 @@ export default function ProfilePage() {
               })),
               allIds: ordered.map((x) => x.id),
               seatStatuses: ordered.map((x) => x.status),
+              addons: ordered.flatMap((x) =>
+                (x.addons ?? []).map((a) => ({ id: a.id, seatBookingId: x.id, kind: a.kind === "companion" ? ("companion" as const) : ("additional" as const), addonName: a.name, quantity: a.quantity, personNames: a.person_names ?? [], personAges: a.person_ages ?? [] }))
+              ),
+              companion: r.companion ?? null,
             };
           })
         );
@@ -3836,6 +3852,214 @@ function PartyPlaces({
   );
 }
 
+/** "Add a person" on a booking the parent already holds (00273): lists the vendor's add-ons, takes the
+ *  quantities and names, and sends the parent to pay for the add-ons only. Add-ons never take a class
+ *  place, so a full class doesn't block this. Prices are read again server-side. */
+function AddPeopleDialog({ b, onClose, onAdded }: { b: BookingItem; onClose: () => void; onAdded?: () => void }) {
+  type Offer = { id: string; name: string; price_cents: number; max_per_booking: number | null; min_age: number | null; max_age: number | null };
+  const [offers, setOffers] = useState<Offer[] | null>(null);
+  const [qty, setQty] = useState<Record<string, number>>({});
+  const [names, setNames] = useState<Record<string, string[]>>({});
+  const [ages, setAges] = useState<Record<string, string[]>>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // Additional people are the vendor's opt-in (off by default). Unknown until the answer arrives.
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!b.activityId) return;
+    (supabase as unknown as { from: (t: string) => { select: (c: string) => { eq: (c: string, v: unknown) => { maybeSingle: () => PromiseLike<{ data: unknown }> } } } })
+      .from("activities")
+      .select("allow_additional_people")
+      .eq("id", b.activityId)
+      .maybeSingle()
+      .then(({ data }) => setAllowed((data as { allow_additional_people?: boolean } | null)?.allow_additional_people === true));
+    (supabase as unknown as { from: (t: string) => { select: (c: string) => { eq: (c: string, v: unknown) => { eq: (c: string, v: unknown) => { order: (c: string) => PromiseLike<{ data: unknown }> } } } } })
+      .from("activity_addons")
+      .select("id, name, price_cents, max_per_booking, min_age, max_age")
+      .eq("activity_id", b.activityId)
+      .eq("active", true)
+      .order("sort_order")
+      .then(({ data }) => setOffers((data ?? []) as Offer[]));
+  }, [b.activityId]);
+
+  const heldOf = (offerName: string) => b.addons.filter((a) => a.addonName === offerName).reduce((n, a) => n + a.quantity, 0);
+  const picks = (offers ?? [])
+    .filter((o) => (qty[o.id] ?? 0) > 0)
+    .map((o) => ({ addon_id: o.id, quantity: qty[o.id], names: Array.from({ length: qty[o.id] }, (_, i) => (names[o.id]?.[i] ?? "").trim()), ages: Array.from({ length: qty[o.id] }, (_, i) => parseAge(ages[o.id]?.[i])) }));
+  // An add-on with an age range needs an age for every person, and an age outside it blocks Pay.
+  const ageMissing = (offers ?? []).some((o) => missingAge(o, qty[o.id] ?? 0, ages[o.id]));
+  const ageMismatch = anyAgeMismatch(offers ?? [], qty, ages);
+  const total = picks.reduce((sum, p) => sum + (offers?.find((o) => o.id === p.addon_id)?.price_cents ?? 0) * p.quantity, 0) / 100;
+
+  async function go() {
+    if (picks.length === 0) return;
+    if (ageMissing) { setErr("Enter an age for each person so the provider knows who is coming."); return; }
+    if (ageMismatch) { setErr("A person's age doesn't match the add-on you chose. Fix the age or pick the right add-on."); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await apiPost<{ url?: string; done?: boolean }>("/api/bookings/addons/checkout", {
+        ...(b.groupId ? { group_id: b.groupId } : { booking_id: b.id }),
+        addons: picks,
+      });
+      if (r.url) {
+        window.location.href = r.url;
+        return;
+      }
+      onAdded?.();
+      onClose();
+    } catch (e) {
+      setBusy(false);
+      setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not add them — please try again.");
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[16px] bg-white p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-xl font-black">Add a person</h3>
+        <p className="mt-1 text-sm font-semibold text-[#59658d]">{b.title} · {b.when}. They don&rsquo;t take a class place, and you only pay for what you add.</p>
+        {offers === null || allowed === null ? (
+          <p className="mt-5 text-sm font-semibold text-[#59658d]">Loading…</p>
+        ) : !allowed || offers.length === 0 ? (
+          <p className="mt-5 rounded-[10px] bg-[#FFF5F8] p-3 text-sm font-semibold text-[#59658d]">This provider isn&rsquo;t offering additional people on this class.</p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {offers.map((o) => {
+              const room = Math.max(0, Math.min(o.max_per_booking ?? 10, 10) - heldOf(o.name));
+              const q = qty[o.id] ?? 0;
+              return (
+                <div key={o.id} className="rounded-[12px] border border-[#DCD2D5] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block font-black">{o.name}</span>
+                      <span className="text-sm font-semibold text-[#59658d]">
+                        {o.price_cents > 0 ? `+$${(o.price_cents / 100).toFixed(2)} each` : "No extra charge"}
+                        {rangeText(o) ? ` · ${rangeText(o)}` : ""}{heldOf(o.name) > 0 ? ` · ${heldOf(o.name)} already added` : ""}
+                      </span>
+                    </span>
+                    {room > 0 ? (
+                      <div className="inline-grid shrink-0 grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-lg font-black">
+                        <button type="button" aria-label={`Remove one ${o.name}`} disabled={q <= 0} onClick={() => setQty((m) => ({ ...m, [o.id]: Math.max(0, (m[o.id] ?? 0) - 1) }))} className="h-10 w-10 disabled:opacity-30">-</button>
+                        <span className="grid h-10 w-10 place-items-center">{q}</span>
+                        <button type="button" aria-label={`Add one ${o.name}`} disabled={q >= room} onClick={() => setQty((m) => ({ ...m, [o.id]: Math.min(room, (m[o.id] ?? 0) + 1) }))} className="h-10 w-10 disabled:opacity-30">+</button>
+                      </div>
+                    ) : (
+                      <span className="shrink-0 text-xs font-bold text-[#8A93AC]">Most added</span>
+                    )}
+                  </div>
+                  {q > 0 && (
+                    <AddonPersonFields
+                      offer={o}
+                      offers={offers}
+                      qty={q}
+                      names={names[o.id]}
+                      ages={ages[o.id]}
+                      onName={(i, v) => setNames((m) => { const list = [...(m[o.id] ?? [])]; list[i] = v; return { ...m, [o.id]: list }; })}
+                      onAge={(i, v) => setAges((m) => { const list = [...(m[o.id] ?? [])]; list[i] = v; return { ...m, [o.id]: list }; })}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {err && <p className="mt-3 rounded-[10px] bg-red-50 p-3 text-sm font-bold text-red-700">{err}</p>}
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-[10px] border border-[#EBE3E5] px-4 py-2.5 text-sm font-bold text-[#59658d]">Close</button>
+          <button
+            type="button"
+            disabled={busy || picks.length === 0 || ageMismatch}
+            onClick={() => void go()}
+            className="rounded-[10px] bg-baby-cta px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {busy ? "Working…" : total > 0 ? `Pay $${total.toFixed(2)}` : "Add"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** Add, change or remove the free companions on a booking already held (00273). The same name + age rules
+ *  as the booking page: a name needs an age, an age needs a name, and the age must match what the class
+ *  includes. The server checks again and stops once the session has started. */
+function EditCompanionsDialog({ b, onClose, onSaved }: { b: BookingItem; onClose: () => void; onSaved?: () => void }) {
+  const slots = b.companion?.count ?? 1;
+  const type: CompanionType = b.companion?.type ?? "adult";
+  const seats = b.places.filter((p) => p.status === "pending" || p.status === "confirmed" || p.status === "waitlisted");
+  const [names, setNames] = useState<string[]>(() => {
+    const out: string[] = [];
+    seats.forEach((s, seat) => {
+      b.addons.filter((a) => a.kind === "companion" && a.seatBookingId === s.bookingId).slice(0, slots).forEach((a, k) => { out[seat * slots + k] = a.personNames[0] ?? ""; });
+    });
+    return out;
+  });
+  const [ages, setAges] = useState<string[]>(() => {
+    const out: string[] = [];
+    seats.forEach((s, seat) => {
+      b.addons.filter((a) => a.kind === "companion" && a.seatBookingId === s.bookingId).slice(0, slots).forEach((a, k) => { out[seat * slots + k] = a.personAges[0] != null ? String(a.personAges[0]) : ""; });
+    });
+    return out;
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const problem = companionProblem(type, seats.length, slots, names, ages);
+
+  async function save() {
+    if (problem) { setErr(problem); return; }
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiPost("/api/bookings/companions", {
+        ...(b.groupId ? { group_id: b.groupId } : { booking_id: b.id }),
+        seat_order: seats.map((s) => s.bookingId),
+        companions: buildCompanions(seats.length, slots, names, ages),
+      });
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      setBusy(false);
+      setErr(e instanceof Error && e.message && !/failed to fetch/i.test(e.message) ? e.message : "Could not save — please try again.");
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[16px] bg-white p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+        <p className="text-sm font-semibold text-[#59658d]">{b.title} · {b.when}</p>
+        <div className="mt-2">
+          <CompanionFields
+            type={type}
+            slots={slots}
+            tickets={seats.length}
+            ticketLabels={seats.map((s) => s.name)}
+            names={names}
+            ages={ages}
+            onName={(i, v) => setNames((m) => { const l = [...m]; l[i] = v; return l; })}
+            onAge={(i, v) => setAges((m) => { const l = [...m]; l[i] = v; return l; })}
+          />
+        </div>
+        {err && <p className="mt-3 rounded-[10px] bg-red-50 p-3 text-sm font-bold text-red-700">{err}</p>}
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-[10px] border border-[#EBE3E5] px-4 py-2.5 text-sm font-bold text-[#59658d]">Close</button>
+          <button
+            type="button"
+            disabled={busy || problem !== null}
+            onClick={() => void save()}
+            className="rounded-[10px] bg-baby-cta px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: BookingItem[]; emptyCopy: string; onChanged?: () => void; isPlus?: boolean }) {
   // 2.2: cancel / reschedule with vendor-configured policies. Unavailable
   // actions grey out and explain themselves in a pop-up.
@@ -3849,6 +4073,10 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   // booking can be added: a waitlisted or unpaid one isn't a session yet.
   const [calFor, setCalFor] = useState<BookingItem | null>(null);
   const [ticketFor, setTicketFor] = useState<BookingItem | null>(null);
+  // "Add a person" (00273): extra people on a booking already held, paid for on their own.
+  const [addPeopleFor, setAddPeopleFor] = useState<BookingItem | null>(null);
+  // "Companions" (00273): the free people a class includes, changeable until the session starts.
+  const [companionsFor, setCompanionsFor] = useState<BookingItem | null>(null);
   // null while the picker's sessions are loading.
   const [reschedSessions, setReschedSessions] = useState<ReschedSession[] | null>(null);
   const [reschedPick, setReschedPick] = useState<string | null>(null);
@@ -4141,6 +4369,21 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                 cancelWhy={cancelWhy}
               />
             )}
+            {b.addons.length > 0 && b.status !== "cancelled" && (
+              <p className="mt-2 flex items-start gap-2 pl-0 text-sm font-bold text-[#59658d] sm:pl-20">
+                <Icon name="people" className="mt-0.5 h-4 w-4 shrink-0 text-baby-lilac" />
+                <span>
+                  Also coming:{" "}
+                  {b.addons
+                    .map((a) => {
+                      const who = Array.from({ length: a.quantity }, (_, i) => [a.personNames[i], a.personAges[i] != null ? `age ${a.personAges[i]}` : ""].filter(Boolean).join(" "))
+                        .filter(Boolean);
+                      return `${a.quantity} ${a.addonName}${who.length ? ` (${who.join(", ")})` : ""}`;
+                    })
+                    .join(", ")}
+                </span>
+              </p>
+            )}
             {b.status === "pending" && !b.canClaim && (
               <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
                 <Icon name="bell" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-palette-yellow" />
@@ -4225,6 +4468,26 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                     <Icon name="calendar" className="h-3.5 w-3.5" /> Add to calendar
                   </button>
                 )}
+                {(b.status === "confirmed" || b.status === "pending" || b.status === "waitlisted") && b.companion && !b.isEvent && !b.isCourse && !b.isWixLinked && (
+                  <button
+                    type="button"
+                    onClick={() => setCompanionsFor(b)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-[9px] border border-palette-purple px-3 py-2.5 text-sm font-bold text-palette-purpleInk hover:bg-palette-purpleTint sm:w-auto sm:py-1.5 sm:text-xs"
+                    title="Add or change who is coming with each ticket"
+                  >
+                    <Icon name="people" className="h-3.5 w-3.5" /> {b.addons.some((a) => a.kind === "companion") ? "Edit companion" : "Add companion"}{b.companion.count > 1 ? "s" : ""}
+                  </button>
+                )}
+                {b.status === "confirmed" && b.activityId && !b.isEvent && !b.isCourse && !b.isWixLinked && !b.packagePurchaseId && (
+                  <button
+                    type="button"
+                    onClick={() => setAddPeopleFor(b)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-[9px] border border-palette-purple px-3 py-2.5 text-sm font-bold text-palette-purpleInk hover:bg-palette-purpleTint sm:w-auto sm:py-1.5 sm:text-xs"
+                    title="Add a parent, sibling or other person to this booking"
+                  >
+                    <Icon name="people" className="h-3.5 w-3.5" /> Add a person
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busyId === b.id}
@@ -4260,6 +4523,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
 
       {calFor && <AddBookingToCalendarDialog b={calFor} onClose={() => setCalFor(null)} />}
       {ticketFor && <EventTicketDialog b={ticketFor} onClose={() => setTicketFor(null)} />}
+      {addPeopleFor && <AddPeopleDialog b={addPeopleFor} onClose={() => setAddPeopleFor(null)} onAdded={onChanged} />}
+      {companionsFor && <EditCompanionsDialog b={companionsFor} onClose={() => setCompanionsFor(null)} onSaved={onChanged} />}
 
       {/* Explanatory pop-up for unavailable actions / errors */}
       {notice && (

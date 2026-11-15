@@ -8,6 +8,7 @@ import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
 import { recordSale } from '@/lib/commercials';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
+import { addonRowIdsFromMetadata, settleAddonRows } from '@/lib/booking-addons';
 
 /**
  * Apply the effect of a completed Stripe Checkout Session on return from
@@ -189,6 +190,8 @@ export async function POST(request: Request) {
     // Confirmed seats and make-up-token seats both count toward gross (no
     // cash refunds, so a token seat's money is kept).
     const earnedIds = [...confirmedIds, ...tokenIds];
+    // Add-ons ticked at booking time ride on the same checkout (00273).
+    const addons = await settleAddonRows(admin, addonRowIdsFromMetadata(session.metadata), paymentIntent, user.id);
     if (earnedIds.length > 0) {
       const { data: booked } = await admin
         .from('bookings')
@@ -198,7 +201,8 @@ export async function POST(request: Request) {
       const rows = booked ?? [];
       const providerId = rows[0]?.provider_id ?? null;
       if (providerId) {
-        const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
+        const grossCents =
+          rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0) + addons.settledCents;
         await recordSale(admin, {
           providerId,
           source: 'booking',
@@ -207,6 +211,25 @@ export async function POST(request: Request) {
           paymentIntentId: paymentIntent,
         });
       }
+    }
+    return NextResponse.json({ applied: true, kind });
+  }
+
+  // Add people to a booking already held (00273): the checkout paid for add-ons only.
+  if (kind === 'booking_addon') {
+    if (session.metadata?.user_id !== user.id) {
+      return NextResponse.json({ error: 'Not your checkout session' }, { status: 403 });
+    }
+    const paymentIntent = (session.payment_intent as string) ?? null;
+    const addons = await settleAddonRows(admin, addonRowIdsFromMetadata(session.metadata), paymentIntent, user.id);
+    if (addons.providerId && addons.settledCents > 0) {
+      await recordSale(admin, {
+        providerId: addons.providerId,
+        source: 'booking',
+        bookingId: addons.bookingId,
+        grossCents: addons.settledCents,
+        paymentIntentId: paymentIntent,
+      });
     }
     return NextResponse.json({ applied: true, kind });
   }
