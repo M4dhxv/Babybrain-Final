@@ -148,6 +148,12 @@ export async function POST(request: Request) {
     .eq('id', providerId)
     .single();
 
+  // The negotiated rate is stated only to an owner handed over on an agreed
+  // plan (app_metadata.onboarding_plan, see frontends/vendor/src/lib/requiredPlan.ts).
+  // Every other vendor, custom deal or not, keeps the plan's published line.
+  const { data: authed } = await admin.auth.admin.getUserById(auth.ctx.userId);
+  const customCommissionShown = !!authed?.user?.app_metadata?.onboarding_plan;
+
   let customerId = sub?.stripe_customer_id ?? undefined;
   if (!customerId) {
     const customer = await stripe.customers.create({
@@ -233,7 +239,7 @@ export async function POST(request: Request) {
         message: renewalTerms(
           plan,
           billing,
-          sub?.custom_terms && sub.commission_rate != null
+          customCommissionShown && sub?.custom_terms && sub.commission_rate != null
             ? {
                 rate: Number(sub.commission_rate),
                 flatCents: sub.commission_flat_cents ?? 0,

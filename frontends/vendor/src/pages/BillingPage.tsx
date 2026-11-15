@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { apiPost } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { planMeta, nextPlan, commissionLabel } from '@/lib/plans';
+import { requiredPlan } from '@/lib/requiredPlan';
 import PayoutsCard from '@/components/PayoutsCard';
 
 const sgDate = (iso: string) =>
@@ -23,7 +24,10 @@ const sgDate = (iso: string) =>
 export default function BillingPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { provider, subscription } = useAuth();
+  const { provider, subscription, session } = useAuth();
+  // Only an owner handed over on an agreed plan sees their negotiated rate here;
+  // everyone else keeps the plan's published commission, as before.
+  const ownTerms = requiredPlan(session) ? subscription : null;
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -161,7 +165,7 @@ export default function BillingPage() {
                 </div>
                 <p className="text-xs text-gray-500 mb-3">{plan.tagline}</p>
                 <div className="text-sm font-bold text-[#FA4D8D]">{plan.price}</div>
-                <div className="text-xs text-gray-500">{commissionLabel(subscription?.plan, subscription)}</div>
+                <div className="text-xs text-gray-500">{commissionLabel(subscription?.plan, ownTerms)}</div>
               </div>
               {upgrade ? (
                 <div className="p-4 border border-purple-300 rounded-xl relative">
@@ -175,7 +179,7 @@ export default function BillingPage() {
                   <p className="text-xs text-gray-500 mb-3">{upgrade.tagline}</p>
                   <div className="text-sm font-bold text-purple-600">{upgrade.price}</div>
                   <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-500">{commissionLabel(upgrade.key, subscription)}</div>
+                    <div className="text-xs text-gray-500">{commissionLabel(upgrade.key, ownTerms)}</div>
                     <button onClick={() => navigate('/plans')} className="text-xs font-semibold text-purple-700 hover:underline">
                       Upgrade →
                     </button>
