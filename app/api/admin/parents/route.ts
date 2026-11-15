@@ -29,6 +29,18 @@ const csvCell = (v: unknown) => {
   const s = v == null ? '' : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
+type InterestOption = { id: string; label: string };
+let categoryCache: { at: number; options: InterestOption[] } | null = null;
+/** The activity types parents pick at sign-up, in sign-up order, straight from activity_categories so the
+ *  filter can never drift from what sign-up shows. 9 rows, held for 10 minutes. */
+async function interestOptions(admin: SupabaseClient): Promise<InterestOption[]> {
+  if (categoryCache && Date.now() - categoryCache.at < 10 * 60_000) return categoryCache.options;
+  const { data } = await admin.from('activity_categories').select('slug, name').order('sort_order');
+  const options = ((data ?? []) as { slug: string; name: string }[]).map((c) => ({ id: c.slug, label: c.name }));
+  if (options.length) categoryCache = { at: Date.now(), options };
+  return options;
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdmin(request, ['admin', 'support']);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -163,5 +175,5 @@ export async function GET(request: Request) {
   const withPush = rows.filter((r) => r.pushDevices > 0).length;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, Math.floor(num(sp.get('page')) ?? 1)), pages);
-  return NextResponse.json({ rows: rows.slice((page - 1) * pageSize, page * pageSize), total, withPush, page, pages, pageSize });
+  return NextResponse.json({ rows: rows.slice((page - 1) * pageSize, page * pageSize), total, withPush, page, pages, pageSize, interestOptions: await interestOptions(admin) });
 }
