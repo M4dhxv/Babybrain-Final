@@ -43,7 +43,7 @@ export function AddonPersonFields({
                 onChange={(e) => onName(i, e.target.value)}
                 placeholder={`${offer.name} name (optional)`}
                 aria-label={`${offer.name} ${i + 1} name`}
-                className="min-w-0 flex-1 rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
+                className="w-0 min-w-0 flex-1 rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-semibold"
               />
               <input
                 value={ages?.[i] ?? ""}
@@ -51,10 +51,10 @@ export function AddonPersonFields({
                 maxLength={3}
                 autoComplete="off"
                 onChange={(e) => onAge(i, e.target.value.replace(/\D/g, ""))}
-                placeholder={needsAge ? "Age" : "Age (optional)"}
+                placeholder="Age"
                 aria-label={`${offer.name} ${i + 1} age in years`}
                 aria-invalid={warning != null || bad}
-                className={`w-24 shrink-0 rounded-[10px] border px-3 py-2 text-sm font-semibold ${warning || bad ? "border-amber-400 bg-amber-50" : "border-[#FED7E4]"}`}
+                className={`w-20 shrink-0 rounded-[10px] border px-3 py-2 text-sm font-semibold ${warning || bad ? "border-amber-400 bg-amber-50" : "border-[#FED7E4]"}`}
               />
             </div>
             {bad && <p className="mt-1 text-xs font-bold text-amber-800">Enter the age in whole years, for example 8.</p>}
