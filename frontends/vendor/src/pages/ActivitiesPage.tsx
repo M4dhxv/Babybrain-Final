@@ -3170,9 +3170,9 @@ export default function ActivitiesPage() {
               <div className="space-y-3 pt-2 border-t border-gray-100">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-medium text-gray-900">Let parents add additional people for an extra price</div>
+                    <div className="text-sm font-medium text-gray-900">Let parents add additional guests</div>
                     <div className="text-xs text-gray-500">
-                      Anyone beyond the free companion, such as a second child or another adult. You set each price, and they can be added to a booking a parent already holds. Not available on bookings made with a pack.
+                      These can be added at the time of booking or after from the booking tab on the parents profile.
                     </div>
                   </div>
                   <Switch checked={form.allow_additional_people} disabled={!canManage || !editingId} onCheckedChange={(v) => setForm({ ...form, allow_additional_people: v })} />
