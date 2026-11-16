@@ -103,7 +103,7 @@ export function AddOnsManager({ activityId, providerId, canManage }: { activityI
       <div>
         <div className="text-sm font-medium text-gray-900">Prices for additional people</div>
         <div className="text-xs text-gray-500">
-          Anyone beyond the free companion, e.g. Adult +$12 or Child +$8. Set the ages each price is for and parents are asked for every person&rsquo;s age and can&rsquo;t pay for a price that doesn&rsquo;t match it. They don&rsquo;t use a class place, and parents can add them to a booking they already hold.
+          Set the age restriction for each ticket type.
         </div>
       </div>
 
