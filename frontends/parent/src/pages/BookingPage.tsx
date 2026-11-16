@@ -800,8 +800,12 @@ export default function BookingPage() {
   const total = price != null ? price * ticketCount : null;
   // Add-ons apply to an ordinary native class paid per session. Wix events/classes and courses price
   // people their own way, and a pack purchase books through its own route: people are added after.
-  const addonsAvailable =
-    addonOffers.length > 0 && activity?.allow_additional_people === true && !isEvent && !isCourse && !sessionId?.startsWith("wix:") && payWith === "single";
+  // The vendor offers additional people on this class at all (switched on, with prices).
+  const addonsOffered =
+    addonOffers.length > 0 && activity?.allow_additional_people === true && !isEvent && !isCourse && !sessionId?.startsWith("wix:");
+  // Shown only when paying for the class directly: an additional person is never part of a pack, so a
+  // parent who defaults to a pack credit sees the explanation below instead of the pickers.
+  const addonsAvailable = addonsOffered && payWith === "single";
   const addonPicks = addonsAvailable
     ? addonOffers
         .filter((o) => (addonQty[o.id] ?? 0) > 0)
@@ -1903,6 +1907,22 @@ export default function BookingPage() {
                         onName={(i, v) => setCompanionNames((l) => { const next = [...l]; next[i] = v; return next; })}
                         onAge={(i, v) => setCompanionAges((l) => { const next = [...l]; next[i] = v; return next; })}
                       />
+                    )}
+                    {addonsOffered && !addonsAvailable && (
+                      <section>
+                        <h3 className="mb-2 text-lg font-black">Bring someone along <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
+                        <p className="rounded-[10px] bg-[#FFF5F8] p-3 text-sm font-semibold text-[#59658d]">
+                          {activity?.provider_name?.trim() || "The provider"} lets you add people to this booking at an extra price, but not when you pay with a pack or a pack credit.
+                          To add someone, pay for this class directly.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setPayWith("single")}
+                          className="mt-2 rounded-[10px] border border-[#FED7E4] px-4 py-2 text-sm font-bold text-baby-cta hover:bg-[#FFF5F8]"
+                        >
+                          Pay for this class instead
+                        </button>
+                      </section>
                     )}
                     {addonsAvailable && (
                       <section>
