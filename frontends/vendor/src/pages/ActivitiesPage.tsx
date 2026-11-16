@@ -2874,6 +2874,14 @@ export default function ActivitiesPage() {
                 {form.allow_additional_people && editingId && (
                   <AddOnsManager activityId={editingId} providerId={provider.id} canManage={canManage} />
                 )}
+                {/* Prices above save the moment they are added, but this switch only saves with the activity. */}
+                {editingId && form.allow_additional_people !== (editingActivity?.allow_additional_people ?? false) && (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                    {form.allow_additional_people
+                      ? 'Not switched on yet. Prices save as you add them, but parents will not see additional people until you press Save at the bottom of this form.'
+                      : 'Not switched off yet. Press Save at the bottom of this form to stop offering additional people.'}
+                  </p>
+                )}
               </div>
             )}
 
