@@ -62,7 +62,7 @@ export function CompanionFields({
                         placeholder={slots > 1 ? `Companion ${k + 1} name` : "Companion name"}
                         aria-label={`Companion ${k + 1} name${tickets > 1 ? ` for ticket ${seat + 1}` : ""}`}
                         aria-invalid={needsName}
-                        className={`min-w-0 flex-1 rounded-[10px] border px-3 py-2 text-sm font-semibold ${needsName ? "border-amber-400 bg-amber-50" : "border-[#FED7E4]"}`}
+                        className={`w-0 min-w-0 flex-1 rounded-[10px] border px-3 py-2 text-sm font-semibold ${needsName ? "border-amber-400 bg-amber-50" : "border-[#FED7E4]"}`}
                       />
                       <input
                         value={ages[i] ?? ""}
@@ -73,7 +73,7 @@ export function CompanionFields({
                         placeholder="Age"
                         aria-label={`Companion ${k + 1} age in years${tickets > 1 ? ` for ticket ${seat + 1}` : ""}`}
                         aria-invalid={problem != null || needsAge}
-                        className={`w-24 shrink-0 rounded-[10px] border px-3 py-2 text-sm font-semibold ${problem || needsAge ? "border-amber-400 bg-amber-50" : "border-[#FED7E4]"}`}
+                        className={`w-20 shrink-0 rounded-[10px] border px-3 py-2 text-sm font-semibold ${problem || needsAge ? "border-amber-400 bg-amber-50" : "border-[#FED7E4]"}`}
                       />
                     </div>
                     {needsName && <p className="mt-1 text-xs font-bold text-amber-800">Enter their name as well as their age.</p>}
