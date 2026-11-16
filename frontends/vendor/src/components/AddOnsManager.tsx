@@ -225,7 +225,7 @@ export function AddOnsManager({ activityId, providerId, canManage }: { activityI
                 <NumberInput className={inputCls} placeholder="any" value={draft.maxAge} onChange={(e) => setDraft({ ...draft, maxAge: e.target.value })} />
               </div>
             </div>
-            <p className="text-xs text-gray-500">Ages are in whole years. Leave them blank for no age limit. Leave the price blank for no extra charge, for example to just record that a parent is coming.</p>
+            <p className="text-xs text-gray-500">Leave blank for no limit.</p>
             <div className="flex gap-2">
               <Button type="button" size="sm" disabled={busy} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</Button>
               <Button type="button" size="sm" variant="outline" onClick={() => { setAdding(false); setDraft(emptyDraft); }}>Cancel</Button>

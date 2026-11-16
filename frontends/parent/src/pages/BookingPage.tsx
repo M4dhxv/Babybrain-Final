@@ -2466,7 +2466,7 @@ export default function BookingPage() {
                     )}
                     {addonsOffered && !addonsAvailable && (
                       <section>
-                        <h3 className="mb-2 text-lg font-black">Bring someone along <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
+                        <h3 className="mb-2 text-lg font-black">Add additional guests <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
                         <p className="rounded-[10px] bg-[#FFF5F8] p-3 text-sm font-semibold text-[#59658d]">
                           {activity?.provider_name?.trim() || "The provider"} lets you add people to this booking at an extra price, but not when you pay with a pack or a pack credit.
                           To add someone, pay for this class directly.
@@ -2482,10 +2482,7 @@ export default function BookingPage() {
                     )}
                     {addonsAvailable && (
                       <section>
-                        <h3 className="mb-2 text-lg font-black">Bring someone along <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
-                        <p className="mb-3 text-sm font-semibold text-[#59658d]">
-                          {activity?.provider_name?.trim() || "The provider"} lets you add people to this booking at an extra price. They don&rsquo;t take a class place.
-                        </p>
+                        <h3 className="mb-2 text-lg font-black">Add additional guests <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
                         <div className="space-y-3">
                           {addonOffers.map((o) => {
                             const cap = Math.min(o.max_per_booking ?? 10, 10);
