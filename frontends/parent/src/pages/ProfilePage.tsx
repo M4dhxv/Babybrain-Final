@@ -2284,7 +2284,6 @@ export default function ProfilePage() {
   async function manageBilling() {
     setBillingBusy(true);
     try {
-    setBillingError(null);
       const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/portal", {});
       if (url) window.location.href = url;
     } catch {
