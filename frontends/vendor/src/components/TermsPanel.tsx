@@ -16,8 +16,8 @@ import {
   saveTerm, slotDates, slotLabel, slotPatternDates, slotPrice, slotsClash, swapTermSlot, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
   fetchTermRoster, fetchTermSlotStats, nextTermFrom, openReenrolment, publicHolidaysIn, vendorWithdraw, SG_PUBLIC_HOLIDAYS,
   fetchTermWaitlist, fetchTermWaitlistCounts, offerSessionPlace, offerTermPlace, removeFromTermWaitlist, tellTermWaitlist,
-  fetchTermWithdrawals, markTermRefund, withdrawalNotice,
-  type TermWithdrawal,
+  fetchTermWithdrawals, markTermRefund, slotOffersProblem, withdrawalNotice,
+  type SlotPolicy, type TermWithdrawal,
   type RosterRow, type SlotMode, type SlotStats, type Term, type TermSlot, type TermStatusKey, type TermWaitCount, type TermWaitRow, type WithdrawMode,
 } from '@/lib/termsPreview';
 
@@ -200,6 +200,113 @@ function QuickAdd({ onCreate }: { onCreate: (days: number[], times: string[]) =>
         </Button>
         <button type="button" onClick={() => setOpen(false)} className="text-sm font-semibold text-gray-600 hover:text-gray-900">Cancel</button>
         {n > 0 && <span className={hintCls}>{days.length} day{days.length === 1 ? '' : 's'} × {times.length} time{times.length === 1 ? '' : 's'}. Length, seats and venue are copied from the last slot.</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What one group (a weekly slot) offers, what it costs, and its booking policy (00276). Each group is
+ * set on its own: parents are only shown what is switched on here, and the database refuses anything a
+ * group does not offer. The rules shown are the database's own (slotOffersProblem).
+ */
+function GroupOffers({
+  s, t, setSlot, flexible,
+}: {
+  s: TermSlot;
+  t: Term;
+  setSlot: (id: string, patch: Partial<TermSlot>) => void;
+  flexible: boolean;
+}) {
+  const set = (patch: Partial<TermSlot>) => setSlot(s.id, patch);
+  const setPolicy = (patch: Partial<SlotPolicy>) => set({ policy: { ...s.policy, ...patch } });
+  const problem = slotOffersProblem(s);
+  const p = s.policy;
+  const termPrice = flexible ? t.price : s.price ?? t.price;
+  return (
+    <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+      <h5 className="text-[15px] font-bold text-gray-900">What this group offers</h5>
+      <p className={cn('mt-0.5', hintCls)}>Switch on every way a family can join this group. Parents are only shown what is on here.</p>
+      <div className="mt-4 space-y-4">
+        <ToggleRow
+          title="Enrol for the whole term"
+          hint={s.offerTerm ? `A family enrols once for every session: SGD ${termPrice}${flexible ? ' (the term price)' : ''}.` : 'Parents can not enrol for the whole term in this group.'}
+          checked={s.offerTerm}
+          onChange={(v) => set({ offerTerm: v })}
+        />
+        <div className="border-t border-gray-100 pt-4">
+          <ToggleRow title="Single sessions" hint="Parents book one session of this group at a time, without enrolling." checked={s.offerSingle} onChange={(v) => set({ offerSingle: v })} />
+          {s.offerSingle && (
+            <div className="mt-3 grid grid-cols-1 gap-4 rounded-xl bg-gray-50 p-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Single session price (SGD)</label>
+                <NumberInput min="0" step="any" className={inputCls} value={String(s.singlePrice)} onChange={(e) => set({ singlePrice: Number(e.target.value) || 0 })} aria-label="Single session price" />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          <ToggleRow title="Trial session" hint="One session at an intro price, limited per child so it stays a trial." checked={s.offerTrial} onChange={(v) => set({ offerTrial: v })} />
+          {s.offerTrial && (
+            <div className="mt-3 grid grid-cols-1 gap-4 rounded-xl bg-gray-50 p-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Trial session price (SGD)</label>
+                <NumberInput min="0" step="any" className={inputCls} value={String(s.trialPrice)} onChange={(e) => set({ trialPrice: Number(e.target.value) || 0 })} aria-label="Trial session price" />
+              </div>
+              <div>
+                <label className={labelCls}>Trial sessions allowed per child</label>
+                <NumberInput min="1" max="10" className={inputCls} value={String(t.trialLimit)} disabled aria-label="Trial sessions per child" />
+                <p className={cn('mt-1.5', hintCls)}>Set once for the whole term, under "Trial limit and sibling discount".</p>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          <ToggleRow title="Package credits" hint="Parents with a package can spend credits on any session of this group." checked={s.offerPackage} onChange={(v) => set({ offerPackage: v })} />
+        </div>
+      </div>
+      {problem && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[13px] font-semibold text-red-800">{problem}</p>}
+
+      <div className="mt-5 border-t border-gray-100 pt-4">
+        <label className={labelCls}>Booking policy for this group's sessions</label>
+        <SelectField className={inputCls} value={p.custom ? 'custom' : 'same'} onChange={(v) => setPolicy({ custom: v === 'custom' })} aria-label="Booking policy">
+          <Opt value="same">Same as the activity</Opt>
+          <Opt value="custom">Custom for this group</Opt>
+        </SelectField>
+        <p className={cn('mt-1.5', hintCls)}>
+          Applies to trial, single and package bookings of this group. Withdrawing from the whole term follows the term's "Withdrawing" setting instead.
+        </p>
+        {p.custom && (
+          <div className="mt-3 space-y-4 rounded-xl bg-gray-50 p-4">
+            <ToggleRow title="Parents can cancel" checked={p.allowCancellation} onChange={(v) => setPolicy({ allowCancellation: v })} />
+            {p.allowCancellation && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls}>Cancel up to (hours before)</label>
+                  <NumberInput min="0" className={inputCls} value={String(p.cancellationCutoffHours)} onChange={(e) => setPolicy({ cancellationCutoffHours: Math.max(0, Number(e.target.value) || 0) })} aria-label="Cancellation cutoff hours" />
+                </div>
+                <div>
+                  <label className={labelCls}>When they cancel</label>
+                  <SelectField className={inputCls} value={p.refundMode} onChange={(v) => setPolicy({ refundMode: v as 'refund' | 'none' })} aria-label="Refund mode">
+                    <Opt value="refund">They get a make-up credit</Opt>
+                    <Opt value="none">Non-refundable</Opt>
+                  </SelectField>
+                </div>
+              </div>
+            )}
+            <ToggleRow title="Parents can reschedule" checked={p.allowRescheduling} onChange={(v) => setPolicy({ allowRescheduling: v })} />
+            {p.allowRescheduling && (
+              <div className="sm:w-1/2">
+                <label className={labelCls}>Reschedule up to (hours before)</label>
+                <NumberInput min="0" className={inputCls} value={String(p.rescheduleCutoffHours)} onChange={(e) => setPolicy({ rescheduleCutoffHours: Math.max(0, Number(e.target.value) || 0) })} aria-label="Reschedule cutoff hours" />
+              </div>
+            )}
+            <div className="sm:w-1/2">
+              <label className={labelCls}>Booking closes (minutes before a session)</label>
+              <NumberInput min="0" max="20160" className={inputCls} value={String(p.bookingCutoffMinutes)} onChange={(e) => setPolicy({ bookingCutoffMinutes: Math.max(0, Math.min(20160, Number(e.target.value) || 0)) })} aria-label="Booking cutoff minutes" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -468,9 +575,10 @@ function TermForm({
   const [mergeAsk, setMergeAsk] = useState(false);
   const flexible = t.slotMode === 'flexible';
   const toggleOpen = (id: string) => setOpenSlots((x) => { const n2 = new Set(x); if (n2.has(id)) n2.delete(id); else n2.add(id); return n2; });
-  const set = (patch: Partial<Term>) => setT((x) => ({ ...x, ...patch }));
+  // What the term allows is what its groups add up to (00276), so every edit re-derives it.
+  const set = (patch: Partial<Term>) => setT((x) => normalizeTerm({ ...x, ...patch }));
   const setSlot = (id: string, patch: Partial<TermSlot>) =>
-    setT((x) => ({ ...x, slots: x.slots.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
+    setT((x) => normalizeTerm({ ...x, slots: x.slots.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
 
   // The provider's own active packages — shown so the vendor can see what
   // "open to packages" means in practice. Read-only.
@@ -599,7 +707,11 @@ function TermForm({
         }
       }
     }
-    if (t.price <= 0) return setError('Set the full term price.');
+    for (const sl of t.slots) {
+      const problem = slotOffersProblem(sl);
+      if (problem) return setError(`${slotLabel(sl)}: ${problem}`);
+    }
+    if (t.price <= 0 && t.slots.some((sl) => sl.offerTerm)) return setError('Set the full term price.');
     if (t.allowTrial && t.trialLimit < 1) return setError('Set how many trial sessions one child can take.');
     setError(null);
     onSave({ ...t, name: t.name.trim(), status });
@@ -795,6 +907,8 @@ function TermForm({
                 {s.singleCap != null && s.capacity > 0 && (
                   <p className={cn('mt-1.5', hintCls)}>Term enrolments can fill the other {Math.max(0, s.capacity - s.singleCap)} of {s.capacity} seats.</p>
                 )}
+
+                <GroupOffers s={s} t={t} setSlot={setSlot} flexible={flexible} />
 
                 <div className="mt-4">
                   <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
@@ -1115,46 +1229,18 @@ function TermForm({
         )}
       </Section>
 
-      <Section n={4} title="Trial and single sessions" subtitle="One-off ways in for parents who are not ready for the whole term. Offer either, both or neither.">
-        <ToggleRow
-          title="Offer a trial session"
-          hint="One session at an intro price, limited per child so it stays a trial."
-          checked={t.allowTrial}
-          onChange={(v) => set({ allowTrial: v })}
-        />
-        {t.allowTrial && (
+      <Section n={4} title="Trial limit and sibling discount" subtitle="Term-wide settings. Which groups offer a trial, single sessions or packages is set on each group above.">
+        {t.allowTrial ? (
           <div className="grid grid-cols-1 gap-4 rounded-xl bg-gray-50 p-4 sm:grid-cols-2">
-            <div>
-              <label className={labelCls}>Trial session price (SGD)</label>
-              <NumberInput min="0" step="any" className={inputCls} value={String(t.trialPrice)} onChange={(e) => set({ trialPrice: Number(e.target.value) || 0 })} aria-label="Trial price" />
-            </div>
             <div>
               <label className={labelCls}>Trial sessions allowed per child</label>
               <NumberInput min="1" max="10" className={inputCls} value={String(t.trialLimit)} onChange={(e) => set({ trialLimit: Math.max(1, Math.min(10, Number(e.target.value) || 1)) })} aria-label="Trial sessions per child" />
-              <p className={cn('mt-1.5', hintCls)}>Counted per child across all of your terms. Single sessions are only offered once a child has used them.</p>
+              <p className={cn('mt-1.5', hintCls)}>Counted per child across all of your terms. Where a group offers a trial, single sessions open once a child has used theirs.</p>
             </div>
           </div>
+        ) : (
+          <p className={hintCls}>No group offers a trial session, so there is no trial limit to set. Switch a trial on for a group above to set one.</p>
         )}
-
-        <div className="border-t border-gray-100 pt-5">
-          <ToggleRow
-            title="Offer single sessions"
-            hint={t.allowTrial ? 'Parents can book one session at a time without enrolling, once their child has used the trial.' : 'Parents can book one session of this term at a time, without enrolling.'}
-            checked={t.allowSingles}
-            onChange={(v) => set({ allowSingles: v })}
-          />
-          {t.allowSingles && (
-            <div className="mt-4 grid grid-cols-1 gap-4 rounded-xl bg-gray-50 p-4 sm:grid-cols-2">
-              <div>
-                <label className={labelCls}>Single session price (SGD)</label>
-                <NumberInput min="0" step="any" className={inputCls} value={String(t.singlePrice)} onChange={(e) => set({ singlePrice: Number(e.target.value) || 0 })} aria-label="Single session price" />
-              </div>
-              <div className="flex items-end">
-                <p className={hintCls}>Uses the seats the term leaves free. While a trial is on, shown only to children who have used theirs.</p>
-              </div>
-            </div>
-          )}
-        </div>
 
         <div className="border-t border-gray-100 pt-5">
           <ToggleRow
@@ -1179,44 +1265,43 @@ function TermForm({
         </div>
       </Section>
 
-      <Section n={5} title="Packages" subtitle="For parents who want to pick sessions when it suits them.">
-        <ToggleRow
-          title="Open this term to packages"
-          hint="Parents with a package can book individual sessions of this term using their credits, or buy a package at checkout."
-          checked={t.allowPackages}
-          onChange={(v) => set({ allowPackages: v })}
-        />
-        {!t.allowPackages && (() => {
+      <Section n={5} title="Packages" subtitle="Which groups accept package credits is set on each group above.">
+        {(() => {
+          const open = t.slots.filter((x) => x.offerPackage).length;
           const limited = (packs ?? []).filter((p) => (p.activity_ids ?? []).includes(t.activityId));
           return (
-            <p className="rounded-xl bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-900">
-              {limited.length > 0
-                ? `${limited.length === 1 ? '1 of your packs is' : `${limited.length} of your packs are`} limited to this activity and can't be used here: ${limited.map((p) => p.name).join(', ')}. `
-                : ''}
-              Package credits can't be spent on this term's sessions. If no running term of this activity accepts packages, it is greyed out on the Packages page and parents aren't offered packs for it.
-            </p>
+            <>
+              {open === 0 ? (
+                <p className="rounded-xl bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-900">
+                  {limited.length > 0
+                    ? `${limited.length === 1 ? '1 of your packs is' : `${limited.length} of your packs are`} limited to this activity and can't be used here: ${limited.map((p) => p.name).join(', ')}. `
+                    : ''}
+                  No group of this term accepts package credits. If no running term of this activity does, it is greyed out on the Packages page and parents aren't offered packs for it.
+                </p>
+              ) : (
+                <p className={hintCls}>{open} of {t.slots.length} group{t.slots.length === 1 ? '' : 's'} accept package credits.</p>
+              )}
+              <div className="rounded-xl bg-gray-50 p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-bold text-gray-800">
+                  <Package className="h-4 w-4" /> Your active packages
+                </div>
+                {packs === undefined ? (
+                  <p className={hintCls}>Loading your packages…</p>
+                ) : packs.length === 0 ? (
+                  <p className={hintCls}>You have no active packages yet. Create one under Packages and it will be usable here.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {packs.map((p) => (
+                      <span key={p.id} className="rounded-lg bg-purple-100 px-2.5 py-1.5 text-sm font-semibold text-purple-950">
+                        {p.name} · {p.credits} sessions · SGD {Math.round(p.price_cents / 100)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           );
         })()}
-        {t.allowPackages && (
-          <div className="rounded-xl bg-gray-50 p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-bold text-gray-800">
-              <Package className="h-4 w-4" /> Your active packages
-            </div>
-            {packs === undefined ? (
-              <p className={hintCls}>Loading your packages…</p>
-            ) : packs.length === 0 ? (
-              <p className={hintCls}>You have no active packages yet. Create one under Packages and it will be usable here.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {packs.map((p) => (
-                  <span key={p.id} className="rounded-lg bg-purple-100 px-2.5 py-1.5 text-sm font-semibold text-purple-950">
-                    {p.name} · {p.credits} sessions · SGD {Math.round(p.price_cents / 100)}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </Section>
 
       <Section n={6} title="Withdrawing" subtitle="Whether a family can leave before the term starts, and what they get back. Once it has started they can't withdraw online: they ask you.">

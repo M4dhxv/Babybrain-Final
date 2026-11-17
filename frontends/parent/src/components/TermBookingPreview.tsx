@@ -9,7 +9,7 @@ export type BookMode = "term" | "single" | "trial" | "package";
  *  sessions, either, both or neither; packages are independent. Once a child
  *  has used their trial sessions only single sessions are offered. In the real
  *  feature this comes from the term itself; here a preview control sets it. */
-export type TermOffer = { trial: boolean; single: boolean; packages: boolean; trialLimit: number; trialUsed: number };
+export type TermOffer = { term?: boolean; trial: boolean; single: boolean; packages: boolean; trialLimit: number; trialUsed: number };
 
 export const DEFAULT_OFFER: TermOffer = { trial: false, single: false, packages: true, trialLimit: 1, trialUsed: 0 };
 
@@ -91,6 +91,8 @@ export function BookModeChoice({
     <section>
       <h3 className="mb-4 text-xl font-black">How would you like to book?</h3>
       <div className="grid gap-3 sm:grid-cols-2">
+        {/* Only when a group offers the whole term (00276): a term sold as trial, single or packs alone has no such card. */}
+        {offer.term !== false && (
         <button type="button" aria-pressed={mode === "term"} onClick={() => onModeChange("term")} className={card("term")}>
           <span className="flex items-center justify-between gap-2">
             <span className="font-black text-[#34406f]">{termName ?? "Whole term"}</span>
@@ -119,6 +121,7 @@ export function BookModeChoice({
             </span>
           )}
         </button>
+        )}
         {showTrial && (
           <button type="button" aria-pressed={mode === "trial"} onClick={() => onModeChange("trial")} className={card("trial")}>
             <span className="flex items-center justify-between gap-2">
@@ -552,7 +555,8 @@ export type OfferingTerm = {
   sessions: string;
   /** "Sat, 17 Oct to Wed, 23 Dec". */
   range: string;
-  slots: { label: string; venue?: string | null }[];
+  /** `tags`: what this group offers ("Term", "Single", "Trial", "Packs"), shown under its time. */
+  slots: { label: string; venue?: string | null; tags?: string[] }[];
   /** "$250", or "From $250" when slots are priced differently. */
   price: string;
 };
@@ -579,6 +583,13 @@ export function UpcomingSchedule({ terms }: { terms: OfferingTerm[] }) {
               <li key={i} className="text-sm font-extrabold text-[#34406f]">
                 {s.label}
                 {s.venue && <span className="font-semibold text-[#697390]"> · {s.venue}</span>}
+                {s.tags && s.tags.length > 0 && (
+                  <span className="mt-1 flex flex-wrap gap-1">
+                    {s.tags.map((tag) => (
+                      <span key={tag} className="rounded-full bg-[#F4EFF0] px-2 py-0.5 text-[11px] font-bold text-[#59658d]">{tag}</span>
+                    ))}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

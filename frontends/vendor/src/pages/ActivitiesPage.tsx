@@ -73,7 +73,7 @@ import { apiGet, apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
 import LocationsManager from '@/components/LocationsManager';
 import { TermsPanel } from '@/components/TermsPanel';
-import { fetchTermSlotStats, hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
+import { fetchTermSlotStats, headlineParts, saveTerm, termHeadline, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, type TermSession } from '@/lib/termsPreview';
 import { SectionCard, SectionStatus, TONES, ToggleRow, type FormIssue, type Tone } from '@/components/FormKit';
 import { MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, monthlyPreviewEnabled, setMonthlyEnabled, useMonthlyEnabledMap } from '@/lib/monthlyBilling';
 import { BookModeChoice, EnrolmentOptions, TermComboPanel, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingSchedule, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
@@ -574,7 +574,6 @@ export default function ActivitiesPage() {
   const [scheduleFor, setScheduleFor] = useState<Activity | null>(null);
   // Term enrolment is a UI preview behind a flag (lib/termsPreview.ts).
   const termsOn = termsPreviewEnabled();
-  const [scheduleTab, setScheduleTab] = useState<'single' | 'terms'>('single');
   // Edit activity pop-up: which section is in view, and the scroller it lives in.
   const [formSection, setFormSection] = useState('about');
   const formScrollRef = useRef<HTMLDivElement>(null);
@@ -621,17 +620,14 @@ export default function ActivitiesPage() {
   // same list as drop-in sessions, tagged "Term", so one can't be mistaken for
   // a single class and removed without knowing who it affects.
   const allTerms = useTerms();
-  // Does this activity offer terms at all? (activity id -> on). Off = the Terms
-  // tab is frozen; on = the activity's own price and capacity are frozen.
-  const termsEnabledMap = useTermsEnabledMap();
-  const [termsToggle, setTermsToggle] = useState(false);
+  // An activity is "term-based" simply by having a term: there is no switch to turn on (00276).
+  const activityHasTerms = !!editingId && allTerms.some((t) => t.activityId === editingId);
   // Is this activity billed monthly (00268)? Parents enrol once, book freely, and are invoiced on the 1st.
   const monthlyOn = monthlyPreviewEnabled();
   const monthlyEnabledMap = useMonthlyEnabledMap();
   const [monthlyToggle, setMonthlyToggle] = useState(false);
   useEffect(() => {
     if (showDrawer) {
-      setTermsToggle(termsOn && editingId ? !!termsEnabledMap[editingId] : false);
       setMonthlyToggle(monthlyOn && editingId ? !!monthlyEnabledMap[editingId] : false);
     }
     // Only when the form opens or a different activity is loaded.
@@ -644,10 +640,6 @@ export default function ActivitiesPage() {
     if (mine.length === 0) return [];
     return termSessionsBetween(mine, new Map([[scheduleFor.id, scheduleFor.title]]), new Date(), new Date(Date.now() + 400 * 86_400_000));
   }, [termsOn, scheduleFor, allTerms]);
-  // While an activity offers terms ("Offer this activity as a term" in Edit
-  // activity), its sessions come from its terms, so the Single sessions tab is
-  // locked for adding new ones. Off: the Terms tab is the locked one instead.
-  const singlesLocked = !!(termsOn && scheduleFor && termsEnabledMap[scheduleFor.id]);
   const sessionItems = useMemo(
     () =>
       [
@@ -881,7 +873,6 @@ export default function ActivitiesPage() {
   async function openSchedule(a: Activity) {
     setShowMenu(null);
     const seq = ++scheduleOpenSeq.current;
-    setScheduleTab('single');
     // Drop the previous activity's rows so nothing stale shows while loading.
     setSessions([]);
     setSessionsLoading(true);
@@ -1699,7 +1690,7 @@ export default function ActivitiesPage() {
     // APPOINTMENT service, which is 1:1 by definition) — the field isn't shown
     // and isn't written, so demanding one here would be a dead end on a form
     // with nothing to fix.
-    if (!isWixLinked && !termsToggle && (!form.default_capacity || Number(form.default_capacity) < 1)) {
+    if (!isWixLinked && (!form.default_capacity || Number(form.default_capacity) < 1)) {
       setFormError('Set a capacity for this activity.');
       return;
     }
@@ -1934,15 +1925,6 @@ export default function ActivitiesPage() {
       }
     }
 
-    // The "offer terms" switch is saved with the activity (activities.terms_enabled).
-    if (termsOn && editingId && !isWixLinked) {
-      try {
-        await setTermsEnabled(editingId, termsToggle);
-      } catch (e) {
-        cascadeError = `Activity saved, but the term switch could not be changed: ${(e as { message?: string })?.message ?? 'please try again.'}`;
-      }
-    }
-
     // The "bill monthly" switch is saved with the activity (activities.monthly_billing_enabled).
     if (monthlyOn && editingId && !isWixLinked) {
       try {
@@ -2016,9 +1998,9 @@ export default function ActivitiesPage() {
     if (ageMin != null && ageMax != null && ageMin > ageMax) err('where', "Minimum age can't be higher than the maximum age.");
     if (ageMin == null && ageMax == null) warn('where', 'No age range set. Parents will see the activity as suitable for every age up to 11.');
     if (!isWixLinked) {
-      if (!termsToggle && (!form.default_capacity || Number(form.default_capacity) < 1)) err('where', 'Set how many children each session holds.');
+      if (!form.default_capacity || Number(form.default_capacity) < 1) err('where', 'Set how many children each session holds.');
       if (form.price !== '' && Number(form.price) < 0) err('where', "Price can't be negative.");
-      if (form.price === '' && !termsToggle) warn('where', 'No price set. Parents will see "Price on enquiry" and can still book.');
+      if (form.price === '') warn('where', 'No price set. Parents will see "Price on enquiry" and can still book.');
       if (!form.is_custom_location && !form.location_id) warn('where', "No venue chosen. Parents won't see where to go.");
     }
     if (form.image_source === 'custom' && form.image_urls.length === 0) {
@@ -2698,22 +2680,6 @@ export default function ActivitiesPage() {
             </SectionCard>
 
             <SectionCard id="where" icon={MapPin} tone="blue" title="Who, where and how much" subtitle="Age range, venue, price and how many children each session holds." issues={formIssues.filter((i) => i.section === 'where')}>
-            {termsOn && !isWixLinked && (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <ToggleRow
-                  title="Offer this activity as a term"
-                  hint={termsToggle
-                    ? 'On. Price and seats are set per term and group under Manage schedule → Terms, so they are locked below.'
-                    : 'A term is a block of weekly sessions a parent enrols in once. Off keeps this activity to single sessions.'}
-                  checked={termsToggle}
-                  disabled={!editingId || (termsToggle && !!editingId && hasLiveTerm(allTerms, editingId))}
-                  disabledReason={!editingId
-                    ? 'Save the activity first, then turn terms on.'
-                    : 'A published term is still running. Let it finish before turning terms off.'}
-                  onChange={setTermsToggle}
-                />
-              </div>
-            )}
             {monthlyOn && !isWixLinked && (
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <ToggleRow
@@ -2722,10 +2688,10 @@ export default function ActivitiesPage() {
                     ? `On. Parents choose when they book: pay per booking as usual, or enrol in monthly billing. Monthly parents book any number of sessions at the session price, are invoiced on the 1st for the month just ended, and have until the end of the ${MONTHLY_DUE_DAY}th to pay; until then they can't book more. Leaving takes ${MONTHLY_NOTICE_DAYS} days' notice.`
                     : 'Let parents choose monthly billing instead of paying per booking. Everyone else still pays per booking, with packs and make-up tokens as usual.'}
                   checked={monthlyToggle}
-                  disabled={!editingId || termsToggle}
+                  disabled={!editingId || activityHasTerms}
                   disabledReason={!editingId
                     ? 'Save the activity first, then turn monthly billing on.'
-                    : 'Monthly billing and terms can’t both be on. Turn terms off first.'}
+                    : 'Monthly billing and terms can’t both be on. This activity has terms.'}
                   onChange={setMonthlyToggle}
                 />
               </div>
@@ -2831,27 +2797,19 @@ export default function ActivitiesPage() {
                   min="0"
                   step="any"
                   placeholder="e.g. 45"
-                  className={cn(inputCls, termsToggle && 'cursor-not-allowed bg-gray-100 text-gray-500')}
+                  className={inputCls}
                   value={form.price}
-                  disabled={termsToggle}
                   onChange={(e) => setForm({ ...form, price: e.target.value })}
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  {termsToggle
-                    ? (() => {
-                        const hl = editingId ? termHeadline(allTerms, editingId) : null;
-                        const range = editingId ? termPriceRange(allTerms, editingId) : null;
-                        if (!hl) return 'Locked while terms are on. Add a term under Manage schedule → Terms and its price will show here.';
-                        return `Locked while terms are on. Parents see "${headlineLabel(hl)}".${range ? ` Term prices: $${range.min}${range.max !== range.min ? ` to $${range.max}` : ''}.` : ''}`;
-                      })()
-                    : 'Default price. Individual sessions can be priced differently under Manage schedule.'}
+                  Default price. Each group and one-off session can be priced differently under Manage schedule.
                 </p>
-              {!termsToggle && <DayPricesEditor value={form.day_prices} onChange={(v) => setForm((f) => ({ ...f, day_prices: v }))} basePrice={form.price} />}
+              {<DayPricesEditor value={form.day_prices} onChange={(v) => setForm((f) => ({ ...f, day_prices: v }))} basePrice={form.price} />}
               </div>
             <div>
-              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Capacity {!termsToggle && <span className="text-[#FA4D8D]">*</span>}</label>
-              <NumberInput min="1" required={!termsToggle} placeholder="e.g. 12" className={cn(inputCls, termsToggle && 'cursor-not-allowed bg-gray-100 text-gray-500')} value={form.default_capacity} disabled={termsToggle} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
-              <p className="mt-1 text-xs text-gray-500">{termsToggle ? 'Locked while terms are on. Each group sets its own seats.' : "Applies to upcoming sessions that haven't been set individually, and pre-fills new ones. Override a single session under Manage schedule."}</p>
+              <label className="mb-1.5 block text-sm font-semibold text-gray-800">Capacity <span className="text-[#FA4D8D]">*</span></label>
+              <NumberInput min="1" required placeholder="e.g. 12" className={inputCls} value={form.default_capacity} onChange={(e) => setForm({ ...form, default_capacity: e.target.value })} />
+              <p className="mt-1 text-xs text-gray-500">{"Applies to upcoming sessions that haven't been set individually, and pre-fills new ones. Override a single session under Manage schedule."}</p>
             </div>
               </>
             )}
@@ -3264,7 +3222,7 @@ export default function ActivitiesPage() {
         // term?", and the rest of the page follows the one picked. A draft still
         // shows, flagged outside the replica, so a vendor can check it before
         // publishing. With only ended terms, the latest one is shown as before.
-        const termRows = termsOn && termsEnabledMap[previewFor.id] ? allTerms.filter((t) => t.activityId === previewFor.id) : [];
+        const termRows = termsOn ? allTerms.filter((t) => t.activityId === previewFor.id) : [];
         const firstDate = (t: (typeof termRows)[number]) => t.slots.map((s) => s.start).filter(Boolean).sort()[0] ?? '';
         const bookableTerms = termRows
           .filter((t) => termStatus(t).key !== 'ended')
@@ -3287,7 +3245,7 @@ export default function ActivitiesPage() {
         const offeringPacks = liveViews.some((v) => v.packages)
           ? previewPackages.map((p) => ({ id: p.id, name: p.name, sessions: p.credits, price: `$${Math.round(p.price_cents / 100)}` }))
           : [];
-        const previewHeadline = termsOn && termsEnabledMap[previewFor.id] ? termHeadline(allTerms, previewFor.id) : null;
+        const previewHeadline = termsOn && termRows.length > 0 ? termHeadline(allTerms, previewFor.id) : null;
         const offered = (m: BookMode) =>
           m === 'term' ||
           (m === 'trial' && !!termView?.trial && previewTrialUsed < termView.trialLimit) ||
@@ -3869,67 +3827,21 @@ export default function ActivitiesPage() {
             </button>
           </div>
 
-          {termsOn && !scheduleIsWix && (
-            <div className="flex gap-2 border-b border-gray-200 px-5" role="tablist">
-              {([['single', 'Single sessions'], ['terms', 'Terms']] as const).map(([k, label]) => (
-                <button
-                  key={k}
-                  role="tab"
-                  aria-selected={scheduleTab === k}
-                  onClick={() => setScheduleTab(k)}
-                  className={cn(
-                    '-mb-px flex items-center gap-1.5 border-b-[3px] px-3 py-3 text-[15px] transition-colors',
-                    scheduleTab === k ? 'border-[#FA4D8D] font-bold text-gray-900' : 'border-transparent font-semibold text-gray-500 hover:text-gray-800',
-                    k === 'single' && singlesLocked && 'text-gray-400',
-                    k === 'terms' && !termsEnabledMap[scheduleFor.id] && 'text-gray-400',
-                  )}
-                >
-                  {label}
-                  {((k === 'single' && singlesLocked) || (k === 'terms' && !termsEnabledMap[scheduleFor.id])) && <Lock className="h-3.5 w-3.5" aria-label="Frozen" />}
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            {termsOn && !scheduleIsWix && scheduleTab === 'terms' ? (
-              <>
-                {!termsEnabledMap[scheduleFor.id] && (
-                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
-                    <div className="flex items-start gap-3">
-                      <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
-                      <div>
-                        <p className="text-[15px] font-bold text-amber-950">Terms are switched off for this activity</p>
-                        <p className="mt-0.5 text-[13px] text-amber-900">
-                          Turn on "Offer this activity as a term" in Edit activity to build terms here.
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={() => { const a = scheduleFor; setScheduleFor(null); openEdit(a); }}
-                      className="h-10 rounded-xl border-2 border-amber-400 px-4 text-sm font-bold text-amber-950 hover:bg-amber-100"
-                    >
-                      Open Edit activity
-                    </Button>
-                  </div>
-                )}
-                <div
-                  className={cn(!termsEnabledMap[scheduleFor.id] && 'pointer-events-none select-none opacity-40 grayscale')}
-                  aria-disabled={!termsEnabledMap[scheduleFor.id] ? true : undefined}
-                  inert={!termsEnabledMap[scheduleFor.id] ? true : undefined}
-                >
-                  <TermsPanel
-                    activityId={scheduleFor.id}
-                    activityTitle={scheduleFor.title}
-                    defaultPrice={scheduleFor.price ?? null}
-                    defaultCapacity={scheduleFor.default_capacity ?? null}
-                    defaultLocationId={scheduleFor.location_id ?? null}
-                    locations={locations}
-                  />
-                </div>
-              </>
-            ) : (
+            {/* One view for everything this activity runs (00276): its terms and their groups first, each
+                with its own offers, prices and booking policy, then any one-off sessions below. */}
+            {termsOn && !scheduleIsWix && (
+              <section aria-label="Terms and groups">
+                <TermsPanel
+                  activityId={scheduleFor.id}
+                  activityTitle={scheduleFor.title}
+                  defaultPrice={scheduleFor.price ?? null}
+                  defaultCapacity={scheduleFor.default_capacity ?? null}
+                  defaultLocationId={scheduleFor.location_id ?? null}
+                  locations={locations}
+                />
+              </section>
+            )}
             <>
             {/* A Wix-linked activity's dates come from Wix and are re-mirrored
                 (and reconciled) on every availability fetch, so a session added
@@ -3951,29 +3863,9 @@ export default function ActivitiesPage() {
                 </p>
               </div>
             )}
-            {singlesLocked && !scheduleIsWix && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
-                <div className="flex items-start gap-3">
-                  <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
-                  <div>
-                    <p className="text-[15px] font-bold text-amber-950">Single sessions are locked</p>
-                    <p className="mt-0.5 text-[13px] text-amber-900">
-                      This activity is offered as a term, so its sessions, including any trial or single sessions, are set up under Terms.
-                      Existing sessions below can still be edited or cancelled. Turn off "Offer this activity as a term" in Edit activity to add sessions here.
-                    </p>
-                  </div>
-                </div>
-                <Button variant="outline" onClick={() => setScheduleTab('terms')} className="h-10 rounded-xl border-2 border-amber-400 px-4 text-sm font-bold text-amber-950 hover:bg-amber-100">
-                  Open Terms
-                </Button>
-              </div>
-            )}
             {!scheduleIsWix && (
-            <div
-              className={cn(singlesLocked && 'pointer-events-none select-none opacity-40 grayscale')}
-              aria-disabled={singlesLocked ? true : undefined}
-              inert={singlesLocked ? true : undefined}
-            >
+            <div className={termsOn ? 'border-t border-gray-200 pt-5' : undefined}>
+              {termsOn && <p className="mb-3 text-sm font-semibold text-gray-500">One-off sessions, outside a term</p>}
               <h4 className="mb-3 text-lg font-bold text-gray-900">Add sessions</h4>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -4343,7 +4235,6 @@ export default function ActivitiesPage() {
               </div>
             </div>
             </>
-            )}
           </div>
         </div>
         </div>

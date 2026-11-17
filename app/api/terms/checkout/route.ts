@@ -112,17 +112,19 @@ export async function POST(request: Request) {
     .from('activity_sessions')
     .select(
       'id, starts_at, ends_at, term_slot_id, activities(title, slug, provider_id, address), provider_locations(name, address), ' +
-        'term_slots(terms(id, name, single_price_cents, trial_price_cents))'
+        'term_slots(single_price_cents, trial_price_cents, terms(id, name, single_price_cents, trial_price_cents))'
     )
     .in('id', chargeSeats.map((s) => s.session_id as string))
     .order('starts_at', { ascending: true });
   type TermRef = { id: string; name: string; single_price_cents: number; trial_price_cents: number };
   type SessionRow = {
+    id: string;
     starts_at: string;
     ends_at: string;
     activities: { title: string; slug: string; provider_id: string | null; address: string | null } | null;
     provider_locations: { name: string | null; address: string | null } | null;
-    term_slots: { terms: TermRef | null } | null;
+    // 00276: a group's own single / trial price; null = the term's.
+    term_slots: { single_price_cents: number | null; trial_price_cents: number | null; terms: TermRef | null } | null;
   };
   const rows = (sessions ?? []) as unknown as SessionRow[];
   const first = rows[0];
@@ -158,10 +160,17 @@ export async function POST(request: Request) {
       (sum, e) => sum + Math.round((Number(e.price_cents) * (heldBy.get(e.id as string) ?? 0)) / Math.max(1, Number(e.sessions))),
       0
     );
-  } else if (kind === 'trial') {
-    totalCents = Number(term.trial_price_cents) * seatCount;
   } else {
-    totalCents = Number(term.single_price_cents) * seatCount;
+    // A trial or single seat costs what ITS group charges (00276), else the term's price.
+    const unitFor = (sessionId: string) => {
+      const slot = rows.find((r) => r.id === sessionId)?.term_slots ?? null;
+      return Number(
+        kind === 'trial'
+          ? slot?.trial_price_cents ?? term.trial_price_cents
+          : slot?.single_price_cents ?? term.single_price_cents
+      );
+    };
+    totalCents = chargeSeats.reduce((sum, s) => sum + unitFor(s.session_id as string), 0);
   }
 
   // Credit with this vendor (00274): set aside what covers this enrolment, then only the rest is

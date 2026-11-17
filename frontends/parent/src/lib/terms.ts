@@ -27,6 +27,11 @@ export type LiveSlot = PreviewSlot & {
   /** This slot's full-term price in dollars (its own, else the term's). */
   price: number;
   singleCap: number | null;
+  /** What this group offers (00276): its own setting, else the term's. */
+  offers: { term: boolean; single: boolean; trial: boolean; package: boolean };
+  /** What one single / trial session of this group costs, in dollars. */
+  singlePrice: number;
+  trialPrice: number;
 };
 
 export type LiveTerm = {
@@ -51,6 +56,8 @@ export type LiveTerm = {
   slots: LiveSlot[];
   /** What the vendor decided about leaving before the term starts (00274). */
   withdraw: WithdrawPolicy;
+  /** Some group can be enrolled in for the whole term (a Flexible term needs one in every group). */
+  termOffered: boolean;
 };
 
 /** `set` false = the vendor has not chosen (an older term): the activity's own cancellation rules apply. */
@@ -111,6 +118,12 @@ type SlotRow = {
   price_cents: number | null;
   pattern: { days?: number[]; time?: string; perDay?: boolean; dayTimes?: Record<string, { time: string }> };
   provider_locations: { name: string } | null;
+  offer_term?: boolean | null;
+  offer_single?: boolean | null;
+  offer_trial?: boolean | null;
+  offer_package?: boolean | null;
+  single_price_cents?: number | null;
+  trial_price_cents?: number | null;
 };
 
 type TermRow = {
@@ -257,13 +270,40 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
             spotsLeft: upcomingSpots.length ? Math.max(0, Math.min(...upcomingSpots)) : null,
             price: dollars(s.price_cents ?? t.price_cents),
             singleCap: s.single_cap,
+            // 00276: a group's own offers and prices, else its term's (older rows have none of their own).
+            offers: {
+              term: s.offer_term ?? true,
+              single: s.offer_single ?? t.allow_singles,
+              trial: s.offer_trial ?? t.allow_trial,
+              package: s.offer_package ?? t.allow_packages,
+            },
+            singlePrice: dollars(s.single_price_cents ?? t.single_price_cents),
+            trialPrice: dollars(s.trial_price_cents ?? t.trial_price_cents),
           };
         })
         .filter((s) => s.dates.some((d) => Date.parse(d) > now)),
     }))
     .filter((t) => t.slots.length > 0)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .map(({ created_at: _created, ...t }) => t);
+    .map(({ created_at: _created, ...t }) => t)
+    // 00276: what the term offers is what its groups offer. Prices lead with the cheapest group that offers it.
+    .map((t): LiveTerm => {
+      const cheapest = (list: number[], fallback: number) => (list.length ? Math.min(...list) : fallback);
+      const singles = t.slots.filter((s) => s.offers.single);
+      const trials = t.slots.filter((s) => s.offers.trial);
+      return {
+        ...t,
+        allowSingles: singles.length > 0,
+        singlePrice: cheapest(singles.map((s) => s.singlePrice), t.singlePrice),
+        allowTrial: trials.length > 0,
+        trialPrice: cheapest(trials.map((s) => s.trialPrice), t.trialPrice),
+        allowPackages: t.slots.some((s) => s.offers.package),
+        termOffered:
+          t.slotMode === "flexible"
+            ? t.groups.length > 0 && t.groups.every((g) => t.slots.some((s) => s.groupId === g.id && s.offers.term))
+            : t.slots.some((s) => s.offers.term),
+      };
+    });
 
   return { terms, termSessionIds: new Set(rows.sessions.map((s) => s.id)) };
 }
@@ -348,6 +388,9 @@ export function liveComboQuote(term: LiveTerm, slots: LiveSlot[], cutoffMinutes:
     spotsLeft: spots.length ? Math.min(...spots) : null,
     price: fullPrice,
     singleCap: null,
+    offers: { term: true, single: false, trial: false, package: false },
+    singlePrice: 0,
+    trialPrice: 0,
   };
   return {
     slot: combined,
