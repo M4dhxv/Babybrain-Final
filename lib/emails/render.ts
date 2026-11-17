@@ -49,6 +49,12 @@ const str = (d: EmailData, k: string): string | undefined => {
   return v == null || v === '' ? undefined : String(v);
 };
 
+/** What a make-up token notification is worth, e.g. "$25.00" (00276); undefined for one sent before tokens carried an amount. */
+const tokenAmount = (d: EmailData): string | undefined => {
+  const c = Number(d.amount_cents);
+  return Number.isFinite(c) && c > 0 ? `${(c / 100).toFixed(2)}` : undefined;
+};
+
 const greet = (name?: string | null) => `Hi ${name ? esc(name) : 'there'} 👋`;
 const p = (html: string) => `<p style="margin:0 0 16px">${html}</p>`;
 const bold = (t: string) => `<strong style="color:#4a4a4a">${esc(t)}</strong>`;
@@ -448,9 +454,11 @@ const T: Record<string, Template> = {
       (d.reason === 'waitlist_race'
         ? p(`Someone else claimed the spot on ${bold(str(d, 'activity_name') ?? 'the session')} a moment before your payment went through. Your payment has been turned into a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}, so you haven’t lost anything. It doesn’t expire, and you’re still on the waitlist.`)
         : d.manual
-        ? p(`${bold(str(d, 'provider_name') ?? 'Your provider')} has issued you a make-up token${str(d, 'activity_name') ? ` for ${bold(str(d, 'activity_name') as string)}` : ''}. ${str(d, 'expires_on') ? `Use it before ${bold(str(d, 'expires_on') as string)}.` : 'It doesn’t expire.'}`)
-        : p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a session')} has been replaced with a make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`)) +
-      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another session with it')} whenever suits you.`) +
+        ? p(`${bold(str(d, 'provider_name') ?? 'Your provider')} has issued you ${tokenAmount(d) ? bold(tokenAmount(d) as string) + ' of ' : 'a '}make-up token${str(d, 'activity_name') ? ` for ${bold(str(d, 'activity_name') as string)}` : ''}. ${str(d, 'expires_on') ? `Use it before ${bold(str(d, 'expires_on') as string)}.` : 'It doesn’t expire.'}`)
+        : p(`Your cancelled booking for ${bold(str(d, 'activity_name') ?? 'a session')} is now ${tokenAmount(d) ? bold(tokenAmount(d) as string) + ' of ' : ''}make-up token with ${bold(str(d, 'provider_name') ?? 'the provider')}. It doesn’t expire.`)) +
+      // A make-up token is a balance with that provider (00276): it pays for anything they offer, with the card covering any difference.
+      p('You can use it on any session, pack or extra people with them. If it doesn’t cover everything, you only pay the difference.') +
+      p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book with your make-up token')} whenever suits you.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),
 
@@ -460,7 +468,7 @@ const T: Record<string, Template> = {
   make_up_token_returned: (d, ctx) =>
     wrap(ctx, 'Your make-up token is available again 👶🧠',
       p(greet(ctx.recipientName)) +
-      p(`Your make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')} is back — the session it was booked on has been cancelled, so it’s free to use again.`) +
+      p(`${tokenAmount(d) ? bold(tokenAmount(d) as string) + ' of your ' : 'Your '}make-up token for ${bold(str(d, 'provider_name') ?? 'the provider')} is back — the booking it paid for has been cancelled, so it’s in your balance again.`) +
       p(`${link(ctx, str(d, 'url') ?? '/profile?tab=makeup', 'Book another session with it')} whenever suits you.`) +
       p('As always, if you have any questions or feedback, please do not hesitate to reply to this email.') +
       sign),

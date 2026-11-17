@@ -1,3 +1,4 @@
+import { dollars, useMakeUpCredit } from "../lib/makeUpCredit";
 import { createPortal } from "react-dom";
 import { staffLabel } from "../lib/staffLabel";
 import {
@@ -416,7 +417,7 @@ function NotificationRow({ n }: { n: NotifItem }) {
 
   return <div className={cardClass}>{body}</div>;
 }
-type TokenItem = { id: string; status: string; provider: string; activityTitle: string | null; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null;
+type TokenItem = { id: string; status: string; amountCents: number; balanceCents: number; provider: string; activityTitle: string | null; created_at: string; expires_at: string | null; originSlug: string | null; childId: string | null;
   /** Where a token with no origin class can be spent: that provider's bookable classes. */
   redeemOptions: { slug: string; title: string }[] };
 type PackageItem = { id: string; name: string; provider: string; total: number; remaining: number; status: string; expiresAt: string | null; bookHref: string };
@@ -1116,6 +1117,89 @@ const HIGHLIGHT_RING = "bb-highlight";
 /** A use-by date can be months out, so it carries its year (sgDay alone has none). */
 const sgYear = (iso: string) => new Date(iso).toLocaleDateString("en-SG", { timeZone: "Asia/Singapore", year: "numeric" });
 
+/** What the parent can spend with each provider, one card per provider (00276). A make-up token is money
+ *  kept with the provider it came from: it can be spent on anything that provider offers (a session, a
+ *  pack, extra people), and the card pays whatever it does not cover. */
+function MakeUpBalances({ userId }: { userId: string | undefined }) {
+  const { list, loaded } = useMakeUpCredit(userId);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [classes, setClasses] = useState<Record<string, { slug: string; title: string }[]>>({});
+  useEffect(() => {
+    const need = list.map((c) => c.providerId).filter((id) => !(id in classes));
+    if (need.length === 0) return;
+    let live = true;
+    supabase
+      .from("activities")
+      .select("provider_id, slug, title, wix_service_type")
+      .in("provider_id", need)
+      .eq("is_published", true)
+      .is("archived_at", null)
+      .order("title")
+      .limit(200)
+      .then(({ data }) => {
+        if (!live) return;
+        const next: Record<string, { slug: string; title: string }[]> = {};
+        for (const id of need) next[id] = [];
+        for (const a of (data ?? []) as Array<{ provider_id: string; slug: string; title: string; wix_service_type: string | null }>) {
+          if (a.wix_service_type === "EVENT") continue;
+          next[a.provider_id]?.push({ slug: a.slug, title: a.title });
+        }
+        setClasses((prev) => ({ ...prev, ...next }));
+      });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]);
+  if (!loaded || list.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <h2 className="mb-3 text-[19px] font-black">Your balance</h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {list.map((c) => {
+          const options = classes[c.providerId] ?? [];
+          return (
+            <div key={c.providerId} className="rounded-[12px] border border-[#EBE3E5] bg-white p-4 shadow-card">
+              <div className="flex items-center gap-3">
+                <span className="grid h-11 w-11 flex-shrink-0 place-items-center overflow-hidden rounded-full bg-[#FEF2D7] text-[#FFD77A]">
+                  {c.logoUrl ? <img src={c.logoUrl} alt="" className="h-full w-full object-contain" loading="lazy" /> : <Icon name="gift" className="h-5 w-5" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate font-black">{c.name}</h3>
+                  <p className="text-xs font-semibold text-[#59658d]">
+                    {c.nextExpiry ? `Some of it expires ${sgDay(c.nextExpiry)} ${sgYear(c.nextExpiry)}` : "Doesn't expire"}
+                  </p>
+                </div>
+                <p className="text-2xl font-black text-baby-cta">{dollars(c.cents)}</p>
+              </div>
+              {options.length > 0 && (
+                <div className="mt-3">
+                  <Button type="button" size="sm" variant="outline" onClick={() => setOpenId((v) => (v === c.providerId ? null : c.providerId))}>
+                    Spend it on a class
+                  </Button>
+                  {openId === c.providerId && (
+                    <ul className="mt-2 space-y-2">
+                      {options.slice(0, 12).map((o) => (
+                        <li key={o.slug}>
+                          <a
+                            href={`/book?slug=${o.slug}`}
+                            className="flex min-h-[44px] items-center justify-between gap-3 rounded-[10px] border border-[#FED7E4] px-3 py-2 text-sm font-bold text-[#3f4b78] hover:bg-[#FEF1F6]"
+                          >
+                            <span className="min-w-0 truncate">{o.title}</span>
+                            <span className="flex-shrink-0 font-black text-baby-cta">Book</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** One make-up token, shared by the flat and the split-by-child lists. */
 function TokenRow({ t }: { t: TokenItem }) {
   const highlighted = useRowHighlight(t.id);
@@ -1132,6 +1216,16 @@ function TokenRow({ t }: { t: TokenItem }) {
           <h3 className="truncate font-black">{t.activityTitle ?? t.provider}</h3>
           {t.activityTitle && <p className="truncate text-sm font-bold text-[#3f4b78]">{t.provider}</p>}
           <p className="text-sm font-semibold text-[#59658d]">Issued {sgDay(t.created_at)}</p>
+          {/* What it is worth (00276): a token is money, not one booking. */}
+          <p className="text-sm font-black text-[#3f4b78]">
+            {t.amountCents <= 0
+              ? "No value recorded"
+              : t.balanceCents === t.amountCents
+                ? dollars(t.amountCents)
+                : t.balanceCents > 0
+                  ? `${dollars(t.balanceCents)} left of ${dollars(t.amountCents)}`
+                  : `${dollars(t.amountCents)} — all used`}
+          </p>
           {/* The use-by date on its own line: tucked after the issue date it
               was easy to miss, and a token with no expiry said nothing at all,
               leaving the parent to guess. A used token no longer needs one. */}
@@ -1150,19 +1244,19 @@ function TokenRow({ t }: { t: TokenItem }) {
           48px icon + gap); on sm+ they sit inline on the right as before. */}
       <div className="flex flex-shrink-0 items-center gap-3 pl-16 sm:pl-0">
         {t.status === "issued" && t.originSlug && (
-          <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
+          <Button href={`/book?slug=${t.originSlug}&token=${t.id}`} size="sm" variant="outline">Use</Button>
         )}
         {canChoose && (t.redeemOptions.length === 1 ? (
-          <Button href={`/book?slug=${t.redeemOptions[0].slug}&token=${t.id}`} size="sm" variant="outline">Redeem</Button>
+          <Button href={`/book?slug=${t.redeemOptions[0].slug}&token=${t.id}`} size="sm" variant="outline">Use</Button>
         ) : (
-          <Button type="button" onClick={() => setChoosing((v) => !v)} size="sm" variant="outline">Redeem</Button>
+          <Button type="button" onClick={() => setChoosing((v) => !v)} size="sm" variant="outline">Use</Button>
         ))}
         <span className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${tokenStatusStyle(t.status)}`}>{t.status}</span>
       </div>
     </div>
       {canChoose && choosing && (
         <div className="mt-2 rounded-[12px] border border-[#EBE3E5] bg-white p-4">
-          <p className="mb-2 text-sm font-black">Choose a class from {t.provider} to use this token on</p>
+          <p className="mb-2 text-sm font-black">Choose a class from {t.provider} to spend this on</p>
           <ul className="space-y-2">
             {t.redeemOptions.map((o) => (
               <li key={o.slug}>
@@ -2190,6 +2284,7 @@ export default function ProfilePage() {
   async function manageBilling() {
     setBillingBusy(true);
     try {
+    setBillingError(null);
       const { url } = await apiPost<{ url?: string }>("/api/customer/stripe/portal", {});
       if (url) window.location.href = url;
     } catch {
@@ -2346,7 +2441,7 @@ export default function ProfilePage() {
       const data = await cacheFetch(`profile:tokens:${uid}`, PROFILE_FRESH_MS, () =>
         supabase
           .from("make_up_tokens")
-          .select("id, status, created_at, expires_at, origin_booking_id, child_id, provider_id, providers(business_name)")
+          .select("id, status, amount_cents, balance_cents, created_at, expires_at, origin_booking_id, child_id, provider_id, providers(business_name)")
           .order("created_at", { ascending: false })
           .limit(100)
           .then(({ data }) => data ?? [])
@@ -2357,6 +2452,8 @@ export default function ProfilePage() {
         created_at: string;
         expires_at: string | null;
         origin_booking_id: string | null;
+        amount_cents: number;
+        balance_cents: number;
         child_id: string | null;
         provider_id: string;
         providers: { business_name: string } | null;
@@ -2429,6 +2526,8 @@ export default function ProfilePage() {
             created_at: r.created_at,
             expires_at: r.expires_at,
             provider: r.providers?.business_name ?? "A provider",
+            amountCents: r.amount_cents ?? 0,
+            balanceCents: r.balance_cents ?? 0,
             activityTitle: origin?.title ?? null,
             childId: r.child_id,
             originSlug: liveOriginSlug(r),
@@ -3042,7 +3141,9 @@ export default function ProfilePage() {
           {tab === "makeup" && isPlus && (
             <div>
               <h1 className="text-[26px] font-black">Make-up tokens</h1>
-              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Credits from a provider for a missed session — redeem them when you book a future session with that provider.</p>
+              <p className="mb-4 mt-1 text-sm font-semibold text-[#59658d]">Money kept with a provider after a cancelled or missed session. Spend it on anything that provider offers — a session, a pack, extra people — and pay any difference by card.</p>
+              <MakeUpBalances userId={session?.user?.id} />
+              <h2 className="mb-3 text-[19px] font-black">History</h2>
               <ChildSelect kids={children} value={childFilter} onChange={setChildFilter} />
               {!tokensLoaded ? (
                 <ListRowsSkeleton count={2} lines={2} />

@@ -76,7 +76,7 @@ export async function GET(request: Request, { params }: Params) {
     planPaymentsQuery,
     // Make-up tokens this parent holds or has used. A failed read leaves the section empty rather than the panel broken.
     db.from('make_up_tokens')
-      .select('id, status, created_at, expires_at, auto_issued, child_id, origin_booking_id, redeemed_booking_id, provider:providers(business_name)')
+      .select('id, status, created_at, expires_at, auto_issued, child_id, origin_booking_id, redeemed_booking_id, amount_cents, balance_cents, provider:providers(business_name)')
       .eq('user_id', id).order('created_at', { ascending: false }).limit(200),
   ]);
   if (profile.error) return NextResponse.json({ error: profile.error.message }, { status: 500 });
@@ -97,6 +97,7 @@ export async function GET(request: Request, { params }: Params) {
   type TokenRow = {
     id: string; status: string; created_at: string; expires_at: string | null; auto_issued: boolean | null;
     child_id: string | null; origin_booking_id: string | null; redeemed_booking_id: string | null;
+    amount_cents: number | null; balance_cents: number | null;
     provider: { business_name: string | null } | null;
   };
   const tokenRows = (tokens.error ? [] : (tokens.data ?? [])) as unknown as TokenRow[];
@@ -119,6 +120,8 @@ export async function GET(request: Request, { params }: Params) {
     createdAt: t.created_at,
     expiresAt: t.expires_at,
     auto: !!t.auto_issued,
+    amountCents: t.amount_cents ?? 0,
+    balanceCents: t.balance_cents ?? 0,
     vendor: t.provider?.business_name ?? null,
     forChild: t.child_id ? kidNameById.get(t.child_id) ?? null : null,
     from: bookingInfo(t.origin_booking_id),

@@ -619,6 +619,9 @@ export type Database = {
           info_response: string | null;
           payment_status: PaymentStatus;
           amount: number | null;
+          // Make-up credit paid toward this seat, in cents (00276). paid_by_credit = credit covered it all.
+          credit_cents: number;
+          paid_by_credit: boolean;
           stripe_payment_intent: string | null;
           reminded_at: string | null;
           followed_up_at: string | null;
@@ -691,6 +694,9 @@ export type Database = {
           cancel_reason?: string | null;
           cancelled_by?: string | null;
           checkout_started_at?: string | null;
+          // Make-up credit (00276): written by the database and the service-role checkout code.
+          credit_cents?: number;
+          paid_by_credit?: boolean;
           // Only ever written by the service-role client, and only from
           // app/api/wix/bookings/reschedule — the plain reschedule_booking
           // Postgres RPC (00091) moves this via raw SQL as `security
@@ -1235,6 +1241,9 @@ export type Database = {
           created_at: string;
           expires_at: string | null;
           auto_issued: boolean;
+          // Make-up credit (00276): what the lot was issued for and what is left, in cents.
+          amount_cents: number;
+          balance_cents: number;
         };
         Insert: {
           id?: string;
@@ -1246,6 +1255,9 @@ export type Database = {
           issued_by?: string | null;
           expires_at?: string | null;
           auto_issued?: boolean;
+          // The database sets these from the booking (vendor portal) — only the server passes them.
+          amount_cents?: number;
+          balance_cents?: number;
         };
         Update: {
           status?: 'issued' | 'redeemed' | 'expired';

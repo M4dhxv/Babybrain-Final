@@ -57,6 +57,9 @@ const ALLOWED = new Set([
   // re-enrolment — each checks the caller. activities_with_live_terms only
   // lists activity ids with a published term, for the Explore filter.
   'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
+  // 00276: the parent's own make-up credit balances (reads auth.uid() only). Every function that moves the
+  // money is service-role only.
+  'my_make_up_credit',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

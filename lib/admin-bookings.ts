@@ -66,6 +66,8 @@ type BookingRow = {
   created_at: string; cancel_reason: string | null; cancelled_by: string | null; cancel_refund_mode: string | null;
   medical_disclosure: string | null; info_response: string | null; policies_accepted: string[] | null;
   cancelled_from_status?: string | null;
+  /** Make-up credit (00276) covered the whole seat. */
+  paid_by_credit?: boolean | null;
 };
 
 const TTL_MS = 30_000;
@@ -98,7 +100,7 @@ async function byIds<T>(admin: SupabaseClient, table: string, cols: string, ids:
 async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBooking[]> {
   // cancelled_from_status comes from migration 00210; read it when it exists.
   const hasCancelOrigin = !(await admin.from('bookings').select('cancelled_from_status').limit(1)).error;
-  const bookingCols = `id, user_id, child_id, session_id, provider_id, status, waitlist_position, payment_status, amount, stripe_payment_intent, package_purchase_id, guest_name, guest_contact, booking_group_id, created_at, cancel_reason, cancelled_by, cancel_refund_mode, medical_disclosure, info_response, policies_accepted${hasCancelOrigin ? ', cancelled_from_status' : ''}`;
+  const bookingCols = `id, user_id, child_id, session_id, provider_id, status, waitlist_position, payment_status, amount, stripe_payment_intent, package_purchase_id, guest_name, guest_contact, booking_group_id, created_at, cancel_reason, cancelled_by, cancel_refund_mode, medical_disclosure, info_response, policies_accepted, paid_by_credit${hasCancelOrigin ? ', cancelled_from_status' : ''}`;
   const [bookings, parents] = await Promise.all([
     fetchAll<BookingRow>((f, t) => admin.from('bookings')
       .select(bookingCols)
@@ -134,7 +136,11 @@ async function build(admin: SupabaseClient, fresh: boolean): Promise<AdminBookin
   const purchaseBy = new Map(purchases.map((p) => [p.id, p]));
   const packageBy = new Map(packages.map((p) => [p.id, p.name]));
   const parentBy = new Map(parents.map((p) => [p.id, p]));
-  const redeemed = new Set(tokens.filter((t) => t.redeemed_booking_id).map((t) => t.redeemed_booking_id as string));
+  const redeemed = new Set([
+    ...tokens.filter((t) => t.redeemed_booking_id).map((t) => t.redeemed_booking_id as string),
+    // Seats that make-up credit paid for in full (00276).
+    ...bookings.filter((b) => b.paid_by_credit).map((b) => b.id),
+  ]);
   // Bookings that a make-up token was issued for when they were cancelled.
   const compensated = new Set(tokens.filter((t) => t.origin_booking_id).map((t) => t.origin_booking_id as string));
 

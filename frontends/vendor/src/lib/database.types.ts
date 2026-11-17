@@ -874,6 +874,9 @@ export type Database = {
           created_at: string;
           expires_at: string | null;
           auto_issued: boolean;
+          // Make-up credit (00276): what the lot was issued for and what is left, in cents.
+          amount_cents: number;
+          balance_cents: number;
         };
         Insert: {
           provider_id: string;

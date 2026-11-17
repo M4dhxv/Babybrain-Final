@@ -942,6 +942,9 @@ export type Database = {
           created_at: string;
           expires_at: string | null;
           auto_issued: boolean;
+          // Make-up credit (00276): what the lot was issued for and what is left, in cents.
+          amount_cents: number;
+          balance_cents: number;
         };
         Insert: {
           provider_id: string;
@@ -1057,6 +1060,10 @@ export type Database = {
           // Multi-day events: the calendar day this session is.
           wix_day: string | null;
         }[];
+      };
+      my_make_up_credit: {
+        Args: Record<string, never>;
+        Returns: { provider_id: string; business_name: string; logo_url: string | null; balance_cents: number; next_expiry: string | null; lots: number }[];
       };
       my_booking_activities: {
         Args: { p_booking_ids: string[] };

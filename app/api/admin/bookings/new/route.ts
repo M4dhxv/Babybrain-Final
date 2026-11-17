@@ -58,8 +58,8 @@ export async function GET(request: Request) {
         .select('id, credits_total, credits_remaining, status, expires_at, provider_id, package:packages(name), provider:providers(business_name)')
         .eq('user_id', parentId).eq('status', 'active').gt('credits_remaining', 0).order('created_at', { ascending: false }),
       db.from('make_up_tokens')
-        .select('id, expires_at, child_id, provider_id, provider:providers(business_name)')
-        .eq('user_id', parentId).eq('status', 'issued').order('created_at', { ascending: false }),
+        .select('id, expires_at, child_id, provider_id, amount_cents, balance_cents, provider:providers(business_name)')
+        .eq('user_id', parentId).eq('status', 'issued').gt('balance_cents', 0).order('created_at', { ascending: false }),
     ]);
     const err = kids.error ?? packs.error ?? toks.error;
     if (err) return NextResponse.json({ error: err.message }, { status: 500 });
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
     const live = (exp: string | null) => !exp || Date.parse(exp) > now;
     const kidName = new Map(((kids.data ?? []) as { id: string; name: string }[]).map((k) => [k.id, k.name]));
     type PackRow = { id: string; credits_total: number; credits_remaining: number; expires_at: string | null; provider_id: string; package: { name: string } | null; provider: { business_name: string } | null };
-    type TokRow = { id: string; expires_at: string | null; child_id: string | null; provider_id: string; provider: { business_name: string } | null };
+    type TokRow = { id: string; expires_at: string | null; child_id: string | null; provider_id: string; amount_cents: number; balance_cents: number; provider: { business_name: string } | null };
     return NextResponse.json({
       children: kids.data ?? [],
       packs: ((packs.data ?? []) as unknown as PackRow[]).filter((p) => live(p.expires_at)).map((p) => ({
@@ -77,6 +77,7 @@ export async function GET(request: Request) {
       tokens: ((toks.data ?? []) as unknown as TokRow[]).filter((t) => live(t.expires_at)).map((t) => ({
         id: t.id, vendorId: t.provider_id, vendorName: t.provider?.business_name ?? '(unknown vendor)',
         childId: t.child_id, childName: t.child_id ? kidName.get(t.child_id) ?? null : null, expiresAt: t.expires_at,
+        amountCents: t.amount_cents, balanceCents: t.balance_cents,
       })),
     });
   }

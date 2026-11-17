@@ -5,14 +5,20 @@ import { sessionPrices } from '@/lib/session-price';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-/** Was this booking made by redeeming a make-up token? (redeemed_booking_id
- *  is cleared when such a booking is cancelled — 00081 — so this only ever
- *  matches a live one.) Every row needs this — an active booking can be
- *  paid_with "token" same as a cancelled one can. */
+/** Was this booking paid for entirely with make-up credit? Either it was made by redeeming a one-booking
+ *  token before make-up credit (00276), whose redeemed_booking_id is cleared when the booking is cancelled
+ *  (00081), or credit covered the whole seat (bookings.paid_by_credit). Every row needs this — an active
+ *  booking can be paid_with "token" same as a cancelled one can. */
 async function redeemedTokensFor(admin: Admin, ids: string[]) {
   if (!ids.length) return new Set<string>();
-  const { data } = await admin.from('make_up_tokens').select('redeemed_booking_id').in('redeemed_booking_id', ids);
-  return new Set((data ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id));
+  const [{ data }, { data: byCredit }] = await Promise.all([
+    admin.from('make_up_tokens').select('redeemed_booking_id').in('redeemed_booking_id', ids),
+    admin.from('bookings').select('id').in('id', ids).eq('paid_by_credit', true),
+  ]);
+  return new Set([
+    ...(data ?? []).map((t) => t.redeemed_booking_id).filter((id): id is string => !!id),
+    ...(byCredit ?? []).map((b) => b.id),
+  ]);
 }
 
 /** For a cancelled booking, did an auto make-up token get minted to
