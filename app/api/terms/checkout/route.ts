@@ -27,10 +27,15 @@ import { confirmPaidBookingSeats } from '@/lib/confirm-paid-booking-seats';
  * A trial or single seat on the waitlist is paid for here too ("Pay now" once
  * its seat has come free, 00259): it is held first, at the term's price.
  *
- * Body: { group_id: string } or { booking_id: string } (one waitlist place)
+ * A term enrolment can be paid partly or wholly with the family's credit with this
+ * vendor (migration 00274): body `use_credit: true` sets credit aside for this checkout
+ * (term_credit_hold), the card is charged only the rest, and the credit is spent when the
+ * seats are confirmed (term_credit_settle, from the webhook / reconcile / the free path).
+ *
+ * Body: { group_id: string, use_credit?: boolean } or { booking_id: string } (one waitlist place)
  */
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as { group_id?: string; booking_id?: string };
+  const body = (await request.json().catch(() => ({}))) as { group_id?: string; booking_id?: string; use_credit?: boolean };
   const { user } = await getAuthedContext(request);
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   if (!body.group_id && !body.booking_id) {
@@ -159,11 +164,30 @@ export async function POST(request: Request) {
     totalCents = Number(term.single_price_cents) * seatCount;
   }
 
+  // Credit with this vendor (00274): set aside what covers this enrolment, then only the rest is
+  // charged to the card. Term enrolments only; a trial or single session is paid in cash.
+  let creditCents = 0;
+  if (body.use_credit && kind === 'term' && groupId && totalCents > 0) {
+    const { data: applied, error: holdError } = await db.rpc('term_credit_hold', {
+      p_user: user.id,
+      p_group_id: groupId,
+      p_total_cents: totalCents,
+    });
+    if (holdError) {
+      console.error('[terms/checkout] term_credit_hold failed:', holdError.message);
+      return NextResponse.json({ error: 'Could not apply your credit. Please try again.' }, { status: 503 });
+    }
+    creditCents = Math.min(totalCents, Math.max(0, Number(applied ?? 0)));
+  }
+  // What the card is charged: the seats are stamped with it, so a later withdrawal
+  // refunds exactly the cash that was taken (the credit comes back as credit).
+  const chargeCents = totalCents - creditCents;
+
   // Stamp what each seat cost, server-side (a parent can't set money columns).
   // A term price rarely divides evenly, so the odd cents go to the first seats
   // and the seats always sum to exactly what is charged.
-  const base = Math.floor(totalCents / seatCount);
-  const extra = totalCents - base * seatCount;
+  const base = Math.floor(chargeCents / seatCount);
+  const extra = chargeCents - base * seatCount;
   const now = new Date().toISOString();
   await Promise.all(
     seatIds.map((id, i) =>
@@ -206,14 +230,15 @@ export async function POST(request: Request) {
       ...(stillWaitlisted > 0 ? { wl: String(stillWaitlisted) } : {}),
     }).toString();
 
-  // Free (a term reduced to nothing, or a free trial): nothing to charge, so
-  // settle the seats directly.
-  if (totalCents <= 0) {
+  // Free (a term reduced to nothing, a free trial, or covered by credit): nothing to charge,
+  // so settle the seats directly (and spend any credit set aside for them).
+  if (chargeCents <= 0) {
     const { failed } = await confirmPaidBookingSeats(admin as never, {
       seatIds,
       groupId,
       paymentIntent: null,
       scopeUserId: user.id,
+      termGroupId: creditCents > 0 ? groupId : null,
     });
     if (failed) return NextResponse.json({ error: 'Could not confirm the booking. Please try again.' }, { status: 503 });
     return NextResponse.json({ url: successUrl, free: true });
@@ -236,8 +261,8 @@ export async function POST(request: Request) {
       {
         price_data: {
           currency: 'sgd' as const,
-          unit_amount: totalCents,
-          product_data: { name: unitLabel },
+          unit_amount: chargeCents,
+          product_data: { name: creditCents > 0 ? `${unitLabel} (after $${(creditCents / 100).toFixed(2)} credit)` : unitLabel },
         },
         quantity: 1,
       },
@@ -253,6 +278,7 @@ export async function POST(request: Request) {
       // same group that is still on the waitlist.
       ...(kind === 'term' ? {} : { seat_ids: seatIds.join(',') }),
       term_booking: kind,
+      ...(creditCents > 0 ? { credit_cents: String(creditCents) } : {}),
     },
     success_url: `${successUrl}&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/profile?tab=bookings&booking=cancelled`,
@@ -269,7 +295,7 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (provider?.stripe_account_id && provider.payouts_enabled) {
       const terms = await getTerms(admin, activity.provider_id);
-      const split = computeSplit(totalCents, terms);
+      const split = computeSplit(chargeCents, terms);
       connect = {
         payment_intent_data: {
           application_fee_amount: split.applicationFeeCents,

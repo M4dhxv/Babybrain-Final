@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiPost } from "../lib/api";
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { sgDateTime, sgDay } from "../lib/schedule";
-import { slotLabel, termsDb } from "../lib/terms";
+import { slotLabel, termsDb, withdrawalNotice, type WithdrawPolicy } from "../lib/terms";
 
 /**
  * The parent's term enrolments (00243 / 00244), one card each, on the Bookings
@@ -29,6 +29,31 @@ export type MyTerm = {
   status: "enrolled" | "unpaid" | "withdrawn" | "finished";
   /** A Flexible term (00264): the weekly slots of this child's pair. Empty for a Simple term. */
   slotLabels: string[];
+  /** The vendor's withdrawal policy for this term (00274). */
+  withdraw: WithdrawPolicy;
+  /** What happened when the family withdrew under that policy; null if they have not. */
+  outcome: MyTermOutcome | null;
+};
+
+/** The result of a withdrawal under a term's policy (term_withdrawals, 00274). */
+export type MyTermOutcome = {
+  status: "refund_due" | "refund_done" | "credit_issued" | "no_refund" | "nothing_paid";
+  paidCents: number;
+  feeCents: number | null;
+  refundCents: number | null;
+  /** Credit handed back, with when it runs out. */
+  creditCents: number;
+  creditExpires: string | null;
+};
+
+type WithdrawalRow = {
+  enrolment_id: string;
+  status: MyTermOutcome["status"];
+  paid_cents: number;
+  fee_cents: number | null;
+  refund_cents: number | null;
+  credit_cents: number;
+  term_credits: { expires_at: string } | null;
 };
 
 /** A place on a full term group's waitlist (00260), from my_term_waitlist(). */
@@ -64,9 +89,51 @@ type Row = {
   child_id: string | null;
   price_cents: number;
   children: { name: string } | null;
-  terms: { name: string; activities: { title: string; slug: string } | null } | null;
+  terms: {
+    name: string;
+    withdraw_allowed: boolean | null;
+    withdraw_refund_mode: "money" | "credit" | "none" | null;
+    credit_valid_days: number | null;
+    activities: { title: string; slug: string } | null;
+  } | null;
   bookings: { status: string; payment_status: string; activity_sessions: { starts_at: string } | null }[];
+  /** Every enrolment id folded into this card (a pair of slots is one card). */
+  ids?: string[];
 };
+
+/** One card's withdrawal result: the sum over its enrolments (a pair of slots is one card). */
+function outcomeOf(ids: string[], byEnrolment: Map<string, WithdrawalRow>): MyTermOutcome | null {
+  const rows = ids.map((id) => byEnrolment.get(id)).filter((w): w is WithdrawalRow => !!w);
+  if (rows.length === 0) return null;
+  const order: MyTermOutcome["status"][] = ["refund_due", "refund_done", "credit_issued", "no_refund", "nothing_paid"];
+  const status = order.find((s) => rows.some((r) => r.status === s)) ?? rows[0].status;
+  const expires = rows.map((r) => r.term_credits?.expires_at).filter((e): e is string => !!e).sort()[0] ?? null;
+  const allDone = rows.every((r) => r.refund_cents != null);
+  return {
+    status,
+    paidCents: rows.reduce((n, r) => n + r.paid_cents, 0),
+    feeCents: allDone ? rows.reduce((n, r) => n + (r.fee_cents ?? 0), 0) : null,
+    refundCents: allDone ? rows.reduce((n, r) => n + (r.refund_cents ?? 0), 0) : null,
+    creditCents: rows.reduce((n, r) => n + r.credit_cents, 0),
+    creditExpires: expires,
+  };
+}
+
+/** What the family is told about their withdrawal. (`money` is the cents formatter declared further down.) */
+function outcomeText(o: MyTermOutcome): string {
+  switch (o.status) {
+    case "refund_due":
+      return `Refund requested: ${money(o.paidCents)} paid, less the payment-processing fee Stripe keeps. It is processed by hand, so allow some time.${o.creditCents > 0 ? ` The ${money(o.creditCents)} you paid with credit has come back as credit.` : ""}`;
+    case "refund_done":
+      return `Refunded ${money(o.refundCents ?? 0)} to your card (${money(o.paidCents)} paid, less ${money(o.feeCents ?? 0)} processing fee).`;
+    case "credit_issued":
+      return `${money(o.creditCents)} credit added for another term with this provider${o.creditExpires ? `, valid until ${sgDay(o.creditExpires)}` : ""}. You can use it when you enrol.`;
+    case "no_refund":
+      return "This term was non-refundable, so nothing was returned.";
+    default:
+      return "Nothing had been paid, so there is nothing to refund.";
+  }
+}
 
 export function useMyTerms(userId: string | null | undefined, enabled: boolean) {
   const [terms, setTerms] = useState<MyTerm[]>([]);
@@ -75,14 +142,17 @@ export function useMyTerms(userId: string | null | undefined, enabled: boolean) 
 
   const load = useCallback(async () => {
     if (!userId || !enabled) { setTerms([]); setWaiting([]); setGroupIds(new Set()); return; }
-    const [{ data, error }, { data: wait }] = await Promise.all([
+    const [{ data, error }, { data: wait }, { data: wds }] = await Promise.all([
       termsDb
         .from("term_enrolments")
-        .select("id, combo_id, booking_group_id, child_id, price_cents, children(name), term_slots(pattern), terms(name, activities(title, slug)), bookings(status, payment_status, activity_sessions(starts_at))")
+        .select("id, combo_id, booking_group_id, child_id, price_cents, children(name), term_slots(pattern), terms(name, withdraw_allowed, withdraw_refund_mode, credit_valid_days, activities(title, slug)), bookings(status, payment_status, activity_sessions(starts_at))")
         .eq("user_id", userId)
         .order("created_at", { ascending: false }),
       termsDb.rpc("my_term_waitlist"),
+      // Older databases have no such table yet: the error just leaves this empty.
+      termsDb.from("term_withdrawals").select("enrolment_id, status, paid_cents, fee_cents, refund_cents, credit_cents, term_credits(expires_at)").eq("user_id", userId),
     ]);
+    const withdrawalByEnrolment = new Map(((wds ?? []) as unknown as WithdrawalRow[]).map((w) => [w.enrolment_id, w]));
     // A pair of slots shows as one card: name its slots (readable while the term is on sale).
     const waits = (wait ?? []) as MyTermWait[];
     const comboIds = [...new Set(waits.flatMap((w) => w.combo_slot_ids ?? []))];
@@ -100,15 +170,16 @@ export function useMyTerms(userId: string | null | undefined, enabled: boolean) 
     const merged: Row[] = [];
     const seenCombo = new Map<string, Row>();
     for (const r of rows) {
-      if (!r.combo_id) { merged.push(r); continue; }
+      if (!r.combo_id) { merged.push({ ...r, ids: [r.id] }); continue; }
       const first = seenCombo.get(r.combo_id);
       if (!first) {
-        const copy: Row = { ...r, bookings: [...r.bookings] };
+        const copy: Row = { ...r, bookings: [...r.bookings], ids: [r.id] };
         seenCombo.set(r.combo_id, copy);
         merged.push(copy);
       } else {
         first.price_cents += r.price_cents;
         first.bookings.push(...r.bookings);
+        first.ids = [...(first.ids ?? []), r.id];
       }
     }
     // In week order (Monday first), then by time.
@@ -148,10 +219,18 @@ export function useMyTerms(userId: string | null | undefined, enabled: boolean) 
             last: starts[starts.length - 1] ?? null,
             status,
             slotLabels: labelsOf(r.combo_id),
+            withdraw: {
+              set: r.terms?.withdraw_allowed != null,
+              allowed: r.terms?.withdraw_allowed === true,
+              mode: r.terms?.withdraw_refund_mode ?? null,
+              creditDays: r.terms?.credit_valid_days ?? 365,
+            },
+            outcome: outcomeOf(r.ids ?? [r.id], withdrawalByEnrolment),
           };
         })
         // Withdrawn before it started, or an abandoned checkout that expired: nothing to show.
-        .filter((t) => t.status !== "withdrawn" || t.attended > 0),
+        // (A withdrawal under the vendor's policy stays, so the family can see what they get back.)
+        .filter((t) => t.status !== "withdrawn" || t.attended > 0 || t.outcome != null),
     );
   }, [userId, enabled]);
 
@@ -354,22 +433,36 @@ export function MyTermsList({ terms, waiting = [], onChanged }: { terms: MyTerm[
                     Pay ${(t.priceCents / 100).toFixed(2)}
                   </button>
                 )}
-                {t.left > 0 && (
+                {t.left > 0 && (!t.withdraw.set || (t.withdraw.allowed && t.attended === 0)) && (
                   <button type="button" disabled={busy} onClick={() => setConfirm(t)} className="rounded-full border border-[#DCD2D5] px-4 py-2 text-sm font-black text-[#34406f] disabled:opacity-60">
                     Withdraw from term
                   </button>
                 )}
               </div>
             )}
+            {/* With a vendor policy (00274) the parent can only withdraw before the term starts; after that,
+                or when the vendor does not allow it, they ask the vendor. */}
+            {t.withdraw.set && (t.status === "unpaid" || t.status === "enrolled") && t.left > 0 && (!t.withdraw.allowed || t.attended > 0) && (
+              <p className="mt-3 text-sm font-semibold text-[#59658d]">
+                {t.attended > 0
+                  ? "This term has started, so it can't be withdrawn online. Contact the provider if you need to leave."
+                  : "The provider doesn't allow withdrawals from this term online. Contact them if you need to leave."}
+              </p>
+            )}
+            {t.outcome && (
+              <p className="mt-3 rounded-[10px] bg-[#EDF7FD] px-3 py-2 text-sm font-bold text-[#34406f]">{outcomeText(t.outcome)}</p>
+            )}
             {confirm?.id === t.id && (
               <div className="mt-3 rounded-[12px] border border-[#F3C2D3] bg-[#FFF5F8] p-3">
                 <p className="text-sm font-bold text-[#34406f]">
                   Withdraw {t.childName} from {t.termName}?{" "}
-                  {t.attended > 0
-                    ? "The term has started, so there's no refund for the sessions you leave."
-                    : "Their upcoming sessions are cancelled under the provider's cancellation policy."}{" "}
+                  {t.withdraw.set
+                    ? withdrawalNotice(t.withdraw, null, null)?.text.replace(/^You can withdraw until the term starts\.\s*/, "") ?? ""
+                    : t.attended > 0
+                      ? "The term has started, so there's no refund for the sessions you leave."
+                      : "Their upcoming sessions are cancelled under the provider's cancellation policy."}{" "}
                   {t.slotLabels.length > 1 ? "This withdraws all of their weekly slots. " : ""}
-                  Sessions inside the cancellation window stay booked.
+                  {t.withdraw.set ? "All their upcoming sessions are cancelled." : "Sessions inside the cancellation window stay booked."}
                 </p>
                 <div className="mt-2 flex gap-2">
                   <button type="button" disabled={busy} onClick={() => withdraw(t)} className="rounded-full bg-[#C90044] px-4 py-1.5 text-sm font-black text-white disabled:opacity-60">

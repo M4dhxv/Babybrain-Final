@@ -49,7 +49,58 @@ export type LiveTerm = {
   slotMode: "simple" | "flexible";
   groups: { id: string; name: string }[];
   slots: LiveSlot[];
+  /** What the vendor decided about leaving before the term starts (00274). */
+  withdraw: WithdrawPolicy;
 };
+
+/** `set` false = the vendor has not chosen (an older term): the activity's own cancellation rules apply. */
+export type WithdrawPolicy = {
+  set: boolean;
+  allowed: boolean;
+  mode: "money" | "credit" | "none" | null;
+  creditDays: number;
+};
+
+/**
+ * What a parent is told beside the booking button about leaving a term. `tone` 'none' is the
+ * no-refund disclaimer, which the page shows more firmly. Null when the vendor has not set a policy.
+ * `startLabel` is the first session's date ("Sat, 24 Oct"), the last day a withdrawal is possible.
+ */
+export function withdrawalNotice(
+  p: WithdrawPolicy,
+  startLabel: string | null,
+  providerName: string | null
+): { tone: "info" | "none"; title: string; text: string } | null {
+  if (!p.set) return null;
+  const who = providerName || "the provider";
+  const until = startLabel ? ` until the term starts on ${startLabel}` : " until the term starts";
+  if (!p.allowed) {
+    return {
+      tone: "none",
+      title: "No withdrawals, no refund",
+      text: `You can't withdraw from this term online, and payment for it is non-refundable. If something changes, contact ${who}.`,
+    };
+  }
+  if (p.mode === "none") {
+    return {
+      tone: "none",
+      title: "No refund",
+      text: `You can withdraw${until}, but payment for this term is non-refundable: you won't get money or credit back.`,
+    };
+  }
+  if (p.mode === "credit") {
+    return {
+      tone: "info",
+      title: "Withdrawing",
+      text: `You can withdraw${until}. You'll get a credit for what you paid, to use on another term with ${who}, valid for ${p.creditDays} days. It isn't paid back to your card.`,
+    };
+  }
+  return {
+    tone: "info",
+    title: "Withdrawing",
+    text: `You can withdraw${until}. You'll get back what you paid less the payment-processing fee Stripe keeps. Refunds are processed by hand, so allow some time.`,
+  };
+}
 
 type SlotRow = {
   id: string;
@@ -79,6 +130,9 @@ type TermRow = {
   sibling_discount_pct?: number | null;
   slot_mode?: "simple" | "flexible" | null;
   term_slot_groups?: { id: string; name: string; position: number }[] | null;
+  withdraw_allowed?: boolean | null;
+  withdraw_refund_mode?: "money" | "credit" | "none" | null;
+  credit_valid_days?: number | null;
   created_at: string;
   term_slots: SlotRow[];
 };
@@ -172,6 +226,12 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
       siblingDiscountPct: t.sibling_discount_pct ?? 0,
       slotMode: (t.slot_mode === "flexible" && (t.term_slot_groups?.length ?? 0) > 1 ? "flexible" : "simple") as "simple" | "flexible",
       groups: [...(t.term_slot_groups ?? [])].sort((a, b) => a.position - b.position).map((g) => ({ id: g.id, name: g.name })),
+      withdraw: {
+        set: t.withdraw_allowed != null,
+        allowed: t.withdraw_allowed === true,
+        mode: t.withdraw_refund_mode ?? null,
+        creditDays: t.credit_valid_days ?? 365,
+      } as WithdrawPolicy,
       created_at: t.created_at,
       slots: [...t.term_slots]
         .sort((a, b) => a.position - b.position)
@@ -344,6 +404,28 @@ export function useTrialRemaining(activityId: string | null, childId: string | n
     return () => { stale = true; };
   }, [activityId, childId, enabled, signedIn]);
   return state;
+}
+
+/**
+ * The parent's credit with this activity's vendor (00274): what is free to spend now (credit set
+ * aside for a checkout in progress is left out) and when the soonest of it runs out. Null while
+ * loading, or when there is none.
+ */
+export function useTermCredit(activityId: string | null | undefined, enabled: boolean) {
+  const [credit, setCredit] = useState<{ cents: number; expiresAt: string | null } | null>(null);
+  useEffect(() => {
+    if (!enabled || !activityId) { setCredit(null); return; }
+    let stale = false;
+    db.rpc("term_credit_balance", { p_activity_id: activityId })
+      .single()
+      .then(({ data }) => {
+        if (stale) return;
+        const d = data as { balance_cents: number; expires_at: string | null } | null;
+        setCredit(d && d.balance_cents > 0 ? { cents: d.balance_cents, expiresAt: d.expires_at } : null);
+      });
+    return () => { stale = true; };
+  }, [activityId, enabled]);
+  return credit;
 }
 
 export { db as termsDb };

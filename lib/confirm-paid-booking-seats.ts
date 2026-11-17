@@ -53,6 +53,10 @@ export async function confirmPaidBookingSeats(
     /** Reconcile scopes every read/write to the caller's own bookings; the
      *  webhook (no end-user request in flight) passes nothing. */
     scopeUserId?: string;
+    /** The booking group of a term enrolment (metadata term_booking = 'term'), so any credit
+     *  held for it (00274) is spent with the payment. Every other booking leaves this out and
+     *  pays nothing extra for it. */
+    termGroupId?: string | null;
   }
 ): Promise<ConfirmPaidSeatsResult> {
   let ids = (opts.seatIds ?? []).filter(Boolean);
@@ -86,7 +90,32 @@ export async function confirmPaidBookingSeats(
     if (await compensateUnseatedPaidSeat(admin, id, opts.paymentIntent)) tokenIds.push(id);
   }
 
+  // A term enrolment paid partly with credit (00274): spend the credit set aside for this checkout.
+  // Safe to run again when Stripe redelivers. If it cannot be spent the caller must not call this
+  // checkout handled, or the credit would lapse back to the family while the seats stayed paid.
+  if (opts.termGroupId && confirmedIds.length > 0 && !(await settleTermCredit(admin, opts.termGroupId))) {
+    return { confirmedIds, tokenIds, failed: true };
+  }
+
   return { confirmedIds, tokenIds };
+}
+
+/**
+ * Spend the term credit held for one enrolment's checkout. A database that has not had 00274 yet
+ * (no such function) is not an error: nothing can have been held there.
+ */
+async function settleTermCredit(admin: Admin, groupId: string): Promise<boolean> {
+  try {
+    const { error } = await (admin as unknown as SupabaseClient).rpc('term_credit_settle', { p_group_id: groupId });
+    if (error && error.code !== 'PGRST202') {
+      console.error('[confirmPaidBookingSeats] term_credit_settle failed for', groupId, error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('[confirmPaidBookingSeats] term credit settle crashed:', e);
+    return false;
+  }
 }
 
 /**
