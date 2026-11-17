@@ -65,6 +65,8 @@ export interface ExploreServerQuery {
   lng?: number | null;
   /** Areas nearest-first, when `lat`/`lng` is only an area's centre. */
   regionOrder?: string[] | null;
+  /** Only activities with a live term (migration 00244, features-test). Only sent when set. */
+  termsOnly?: boolean;
 }
 
 /** What the phone decides, with no request. */
@@ -93,6 +95,8 @@ function serverArgs(q: ExploreServerQuery) {
     // Only sent when set: a database that hasn't had migration 00220 yet
     // rejects an argument it doesn't know, even a null one.
     ...(q.regionOrder?.length ? { p_region_order: q.regionOrder } : {}),
+    // Same reasoning: a database without 00244 would reject p_terms_only.
+    ...(q.termsOnly ? { p_terms_only: true } : {}),
   };
 }
 
