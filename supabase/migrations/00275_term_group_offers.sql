@@ -1,4 +1,4 @@
--- 00276_term_group_offers.sql
+-- 00275_term_group_offers.sql
 --
 -- Price, offers and booking policies belong to each GROUP (a term slot: one weekly day/time/venue),
 -- not to the whole term or the activity, and the vendor no longer switches "terms" on for an activity.
@@ -165,7 +165,7 @@ begin
 
   select ts.* into v_slot from public.term_slots ts where ts.id = v_slot_id;
   select t.* into v_term from public.terms t where t.id = v_slot.term_id;
-  -- 00276: what THIS group offers (its own setting, else the term's).
+  -- 00275: what THIS group offers (its own setting, else the term's).
   select * into v_o from public.term_slot_offer(v_slot_id);
   -- A vendor adding their own manual booking.
   if v_term.provider_id in (select public.user_manage_provider_ids()) then

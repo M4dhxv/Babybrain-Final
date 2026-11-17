@@ -27,7 +27,7 @@ export type LiveSlot = PreviewSlot & {
   /** This slot's full-term price in dollars (its own, else the term's). */
   price: number;
   singleCap: number | null;
-  /** What this group offers (00276): its own setting, else the term's. */
+  /** What this group offers (00275): its own setting, else the term's. */
   offers: { term: boolean; single: boolean; trial: boolean; package: boolean };
   /** What one single / trial session of this group costs, in dollars. */
   singlePrice: number;
@@ -270,7 +270,7 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
             spotsLeft: upcomingSpots.length ? Math.max(0, Math.min(...upcomingSpots)) : null,
             price: dollars(s.price_cents ?? t.price_cents),
             singleCap: s.single_cap,
-            // 00276: a group's own offers and prices, else its term's (older rows have none of their own).
+            // 00275: a group's own offers and prices, else its term's (older rows have none of their own).
             offers: {
               term: s.offer_term ?? true,
               single: s.offer_single ?? t.allow_singles,
@@ -286,7 +286,7 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
     .filter((t) => t.slots.length > 0)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .map(({ created_at: _created, ...t }) => t)
-    // 00276: what the term offers is what its groups offer. Prices lead with the cheapest group that offers it.
+    // 00275: what the term offers is what its groups offer. Prices lead with the cheapest group that offers it.
     .map((t): LiveTerm => {
       const cheapest = (list: number[], fallback: number) => (list.length ? Math.min(...list) : fallback);
       const singles = t.slots.filter((s) => s.offers.single);

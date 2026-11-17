@@ -74,7 +74,7 @@ const ALLOWED = new Set([
   // 00274: the parent's credit with a vendor, and recording a manual refund; each checks the caller.
   // term_credit_hold / term_credit_settle are service-role only and must NOT be listed.
   'term_credit_balance', 'vendor_mark_term_refund',
-  // 00276: what a group effectively offers (reads a published term's public numbers, like term_quote).
+  // 00275: what a group effectively offers (reads a published term's public numbers, like term_quote).
   'term_slot_offer',
 ]);
 

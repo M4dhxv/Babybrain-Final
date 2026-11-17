@@ -123,7 +123,7 @@ export async function POST(request: Request) {
     ends_at: string;
     activities: { title: string; slug: string; provider_id: string | null; address: string | null } | null;
     provider_locations: { name: string | null; address: string | null } | null;
-    // 00276: a group's own single / trial price; null = the term's.
+    // 00275: a group's own single / trial price; null = the term's.
     term_slots: { single_price_cents: number | null; trial_price_cents: number | null; terms: TermRef | null } | null;
   };
   const rows = (sessions ?? []) as unknown as SessionRow[];
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
       0
     );
   } else {
-    // A trial or single seat costs what ITS group charges (00276), else the term's price.
+    // A trial or single seat costs what ITS group charges (00275), else the term's price.
     const unitFor = (sessionId: string) => {
       const slot = rows.find((r) => r.id === sessionId)?.term_slots ?? null;
       return Number(

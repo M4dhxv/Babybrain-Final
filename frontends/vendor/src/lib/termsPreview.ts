@@ -82,7 +82,7 @@ export type TermSlot = {
    *  (`dayTimes`, keyed by weekday 0-6); otherwise `time`/`duration` apply to all. */
   perDay: boolean;
   dayTimes: Record<string, { time: string; duration: number }>;
-  /* What this group offers, its prices and its booking policy (00276). Each group is set on its own;
+  /* What this group offers, its prices and its booking policy (00275). Each group is set on its own;
      the term-level flags and prices are derived from the groups when a term is saved. */
   offerTerm: boolean;
   offerSingle: boolean;
@@ -95,7 +95,7 @@ export type TermSlot = {
   policy: SlotPolicy;
 };
 
-/** A group's booking policy (00276), stamped onto its sessions. */
+/** A group's booking policy (00275), stamped onto its sessions. */
 export type SlotPolicy = {
   custom: boolean;
   allowCancellation: boolean;
@@ -118,7 +118,7 @@ export const DEFAULT_SLOT_POLICY: SlotPolicy = {
 };
 
 /**
- * The rules a group's offers must satisfy; the same ones the database enforces (00276). Returns what is
+ * The rules a group's offers must satisfy; the same ones the database enforces (00275). Returns what is
  * wrong, in plain words, or null.
  */
 export function slotOffersProblem(s: Pick<TermSlot, 'offerTerm' | 'offerSingle' | 'offerTrial' | 'offerPackage'>): string | null {
@@ -188,7 +188,7 @@ export function normalizeTerm(t: Term): Term {
     singleCap: s.singleCap ?? null,
     perDay: s.perDay ?? false,
     dayTimes: s.dayTimes ?? {},
-    // A group saved before 00276 follows its term's old term-wide settings.
+    // A group saved before 00275 follows its term's old term-wide settings.
     offerTerm: s.offerTerm ?? true,
     offerSingle: s.offerSingle ?? t.allowSingles ?? false,
     offerTrial: s.offerTrial ?? t.allowTrial ?? false,
@@ -241,7 +241,7 @@ type SlotRow = {
   single_cap: number | null;
   price_cents: number | null;
   pattern: Partial<Pick<TermSlot, 'days' | 'time' | 'duration' | 'start' | 'weeks' | 'count' | 'skip' | 'perDay' | 'dayTimes'>>;
-  /* 00276: what the group offers and its own policy; null = follow the term, then the activity. */
+  /* 00275: what the group offers and its own policy; null = follow the term, then the activity. */
   offer_term?: boolean | null;
   offer_single?: boolean | null;
   offer_trial?: boolean | null;
@@ -359,7 +359,7 @@ const termFields = (t: Term) => ({
   min_left: Math.max(1, t.minLeft),
   reduce_enabled: t.reduce,
   reduce_by_cents: toCents(t.reduceBy),
-  // What the term allows is what its groups add up to (00276): the database keeps these as the outer bound.
+  // What the term allows is what its groups add up to (00275): the database keeps these as the outer bound.
   allow_singles: t.slots.some((s) => s.offerSingle),
   single_price_cents: toCents(Math.min(...t.slots.filter((s) => s.offerSingle).map((s) => s.singlePrice), t.slots.some((s) => s.offerSingle) ? Infinity : t.singlePrice)),
   allow_trial: t.slots.some((s) => s.offerTrial),
@@ -394,7 +394,7 @@ const slotRow = (termId: string, s: TermSlot, position: number) => ({
     days: s.days, time: s.time, duration: s.duration, start: s.start, weeks: s.weeks,
     count: s.count, skip: s.skip ?? [], perDay: s.perDay, dayTimes: s.dayTimes ?? {},
   },
-  // 00276: what this group offers and what it costs, always written out in full.
+  // 00275: what this group offers and what it costs, always written out in full.
   offer_term: s.offerTerm,
   offer_single: s.offerSingle,
   offer_trial: s.offerTrial,
