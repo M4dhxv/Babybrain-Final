@@ -137,7 +137,7 @@ export function AddOnsManager({ activityId, providerId, canManage }: { activityI
                 />
               </div>
               <div className="flex items-center gap-1">
-                <span className="text-xs text-gray-500">max</span>
+                <span className="text-xs text-gray-500">Max tickets</span>
                 <NumberInput
                   className={`${inputCls} w-14`}
                   placeholder="any"

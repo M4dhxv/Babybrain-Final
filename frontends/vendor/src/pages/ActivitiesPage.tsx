@@ -3069,7 +3069,7 @@ export default function ActivitiesPage() {
                   <p className="mt-1 text-xs text-gray-500">
                     {form.min_tickets_per_booking || form.max_tickets_per_booking
                       ? `A booking must take ${form.min_tickets_per_booking && form.max_tickets_per_booking ? `${form.min_tickets_per_booking} to ${form.max_tickets_per_booking}` : form.min_tickets_per_booking ? `at least ${form.min_tickets_per_booking}` : `at most ${form.max_tickets_per_booking}`} tickets.`
-                      : 'Leave blank for no limit. For a price that covers two children, set the fewest to 2.'}
+                      : 'Leave blank for no limit.'}
                   </p>
                 </div>
               )}
