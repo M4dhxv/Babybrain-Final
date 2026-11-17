@@ -93,10 +93,19 @@ const OWNER_EMAIL = arg('owner-email');
 // prod account doesn't exist — sign-in fails and "Forgot password" silently
 // sends nothing (the /recover lands in the test project's logs).
 const PORTAL = arg('portal', 'https://babybrain.sg/vendor');
+// A paid plan agreed with the vendor before handover. Written to the owner's
+// app_metadata.onboarding_plan; the portal's OnboardingGate then makes them
+// start it on Stripe Checkout (card and all) after Terms and Stripe Connect.
+// See frontends/vendor/src/lib/requiredPlan.ts. Only 'growth' (Pro, SGD 99/mo).
+const REQUIRE_PLAN = arg('require-plan');
+if (REQUIRE_PLAN && REQUIRE_PLAN !== 'growth') {
+  console.error(`--require-plan must be "growth" (Pro, SGD 99/month), got "${REQUIRE_PLAN}"`);
+  process.exit(1);
+}
 
 if (!SLUG) {
   console.error('Usage: node scripts/prepare-vendor-handover.mjs --slug=<provider-slug> [--apply]');
-  console.error('       [--cover=URL] [--portal=URL] [--owner-email=…] [--keep-password] [--send-reset] [--force]');
+  console.error('       [--cover=URL] [--portal=URL] [--owner-email=…] [--require-plan=growth] [--keep-password] [--send-reset] [--force]');
   process.exit(1);
 }
 
@@ -127,7 +136,7 @@ if (!provider) {
 }
 
 const [owner] = provider.owner_id
-  ? await sql`select id, email, last_sign_in_at from auth.users where id = ${provider.owner_id}`
+  ? await sql`select id, email, last_sign_in_at, raw_app_meta_data as app_metadata from auth.users where id = ${provider.owner_id}`
   : [];
 
 console.log(`${APPLY ? 'APPLY' : 'DRY RUN'} — ${provider.business_name} (${provider.slug})\n`);
@@ -170,6 +179,8 @@ if (!APPLY) {
   console.log('Would clear vendor_terms_accepted_at and marketing_consent_at.');
   if (COVER) console.log(`Would set cover_image_url to ${COVER}`);
   console.log(KEEP_PASSWORD ? 'Would leave the password alone.' : 'Would reset the password and print it once.');
+  console.log(`Required plan now: ${owner.app_metadata?.onboarding_plan ?? 'none'}`);
+  if (REQUIRE_PLAN) console.log(`Would require the ${REQUIRE_PLAN} plan (card at Stripe Checkout) after Terms and Connect.`);
   console.log(`Portal to hand over: ${PORTAL}`);
   if (SEND_RESET) console.log('Would email the owner a "set your password" link (token_hash, scanner-proof) via Resend.');
   console.log(`Existing notification rows for this owner: ${notifsBefore}`);
@@ -199,6 +210,20 @@ if (!KEEP_PASSWORD) {
     process.exit(1);
   }
   console.log('Password reset.');
+}
+
+if (REQUIRE_PLAN) {
+  // app_metadata merges, so this leaves provider/providers keys alone. No
+  // trigger watches it, so it writes no notification either.
+  const { error } = await admin.auth.admin.updateUserById(owner.id, {
+    app_metadata: { onboarding_plan: REQUIRE_PLAN },
+  });
+  if (error) {
+    console.error(`\nCould not set the required plan: ${error.message}`);
+    await sql.end();
+    process.exit(1);
+  }
+  console.log(`Required plan set: ${REQUIRE_PLAN} (owner adds a card at Stripe Checkout after Terms and Connect).`);
 }
 
 // Trust nothing: any notifications row is a Resend email, so confirm this run

@@ -514,6 +514,7 @@ export async function POST(request: Request) {
           groupId,
           bookingId,
           paymentIntent,
+          termGroupId: session.metadata?.term_booking === 'term' ? groupId : null,
         });
         // The database did not answer, so the parent has paid and the seat is
         // still unpaid in our books — and the clean-up cancels an unpaid seat

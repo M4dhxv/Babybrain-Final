@@ -1,5 +1,5 @@
 /**
- * Behaviour tests for 00243_term_enrolment.sql, run against an in-process
+ * Behaviour tests for 00256_term_enrolment.sql, run against an in-process
  * Postgres (PGlite) — no database, no Docker, nothing touches production.
  *
  *   npm i --no-save @electric-sql/pglite
@@ -16,7 +16,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const MIGRATION = fileURLToPath(new URL('../migrations/00243_term_enrolment.sql', import.meta.url));
+const MIGRATION = fileURLToPath(new URL('../migrations/00256_term_enrolment.sql', import.meta.url));
 const db = new PGlite();
 
 const stub = `

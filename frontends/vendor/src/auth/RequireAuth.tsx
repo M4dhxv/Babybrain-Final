@@ -3,10 +3,11 @@ import { useAuth } from './AuthProvider';
 import NoBusinessGate from './NoBusinessGate';
 import OnboardingGate from '@/components/OnboardingGate';
 import { FullPageLoader } from '@/components/ui/rainbow-loader';
+import { needsRequiredPlan } from '@/lib/requiredPlan';
 
 /** Gate the vendor portal: must be signed in AND a member of a business. */
 export default function RequireAuth() {
-  const { session, provider, role, providerResolved, providerError, loading, refreshProvider } = useAuth();
+  const { session, provider, role, subscription, providerResolved, providerError, loading, refreshProvider } = useAuth();
   const location = useLocation();
   if (loading) return <FullPageLoader label="Loading your portal" />;
   // No session (signed out, or the refresh token expired while the tab sat
@@ -50,10 +51,14 @@ export default function RequireAuth() {
   // clear fork instead of silently dropping them into the claim form.
   if (!provider) return <NoBusinessGate />;
 
-  // Only the owner can act on either step (accept terms for the business,
-  // connect its Stripe account) — a staff/manager sign-in passes straight
-  // through even if the owner hasn't finished onboarding yet.
-  if (role === 'owner' && (!provider.vendor_terms_accepted_at || !provider.payouts_enabled)) {
+  // Only the owner can act on these steps (accept terms for the business,
+  // connect its Stripe account, start a plan agreed before handover) — a
+  // staff/manager sign-in passes straight through even if the owner hasn't
+  // finished onboarding yet.
+  if (
+    role === 'owner' &&
+    (!provider.vendor_terms_accepted_at || !provider.payouts_enabled || needsRequiredPlan(session, subscription))
+  ) {
     return <OnboardingGate />;
   }
 

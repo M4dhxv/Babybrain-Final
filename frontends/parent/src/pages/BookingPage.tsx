@@ -22,10 +22,10 @@ import { clearBookingDraft, readBookingDraft, saveBookingDraft } from "../lib/bo
 import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, routePath, rememberLoginNext, clearLoginNext } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
+import { enrolMonthly, useActivityMonthly, MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, lastPayDay } from "../lib/monthly";
 import { BookModeChoice, TermComboPicker, TermEnrolPreview, TermPicker, TermSessionPicker, type BookMode, type TermOffer } from "../components/TermBookingPreview";
 import { termsPreviewEnabled } from "../lib/termsPreview";
-import { enrolMonthly, useActivityMonthly, MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, lastPayDay } from "../lib/monthly";
-import { flexibleOffering, liveComboQuote, liveQuote, liveSlotsClash, termsDb, useActivityTerms, useTrialRemaining, type LiveSlot } from "../lib/terms";
+import { flexibleOffering, liveComboQuote, liveQuote, liveSlotsClash, termsDb, useActivityTerms, useTermCredit, useTrialRemaining, withdrawalNotice, type LiveSlot } from "../lib/terms";
 import { usePackagesOpen } from "../lib/termHeadlines";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
@@ -416,6 +416,14 @@ export default function BookingPage() {
     trialLimit: liveTerm?.trialLimit ?? 1,
     trialUsed: trialState?.used ?? 0,
   };
+  // Credit with this vendor from an earlier withdrawal (00274), spent against a whole-term enrolment.
+  const termCredit = useTermCredit(activity?.id, termEligible && !!liveTerm && !!auth);
+  const [useCredit, setUseCredit] = useState(true);
+  // What the vendor decided about leaving before the term starts, shown beside the booking button.
+  const termStartsOn = liveTerm ? liveTerm.slots.flatMap((s) => s.dates).sort()[0] : undefined;
+  const withdrawNote = termEligible && liveTerm
+    ? withdrawalNotice(liveTerm.withdraw, termStartsOn ? sgDay(termStartsOn) : null, activity?.provider_name ?? null)
+    : null;
   // Non-cancellable once booked: always for Wix ticketed events and courses
   // (reserved inside Wix), and for any other activity where the provider has
   // turned the cancellation toggle off on the edit-activity card. Drives the
@@ -1776,7 +1784,10 @@ export default function BookingPage() {
    *  route prices it from the term, never from this page. */
   async function payTermGroup(groupId: string) {
     try {
-      const { url } = await apiPost<{ url?: string }>("/api/terms/checkout", { group_id: groupId });
+      const { url } = await apiPost<{ url?: string }>("/api/terms/checkout", {
+        group_id: groupId,
+        ...(bookMode === "term" && termCredit && useCredit ? { use_credit: true } : {}),
+      });
       if (url) { window.location.href = url; return; }
       setBusy(false);
       setErr("Could not start payment — please try again.");
@@ -2805,6 +2816,16 @@ export default function BookingPage() {
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
             <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">{monthlyBilled ? "Added to your monthly invoice" : "Total amount"}</span><strong className="text-3xl">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "—"}</strong></p></div>
+            {termMode && termCredit && !termSlotFull && termTotal != null && termTotal > 0 && (
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-[10px] bg-[#EDF7FD] px-3.5 py-2.5 text-sm font-bold text-[#34406f]">
+                <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} className="mt-1 h-4 w-4 accent-[#FA4D8D]" />
+                <span>
+                  Use my ${(termCredit.cents / 100).toFixed(2)} credit{activity?.provider_name ? ` with ${activity.provider_name}` : ""}
+                  {termCredit.expiresAt ? ` (valid until ${sgDay(termCredit.expiresAt)})` : ""}.
+                  {useCredit ? ` You'll pay $${Math.max(0, termTotal - termCredit.cents / 100).toFixed(2)} by card.` : ""}
+                </span>
+              </label>
+            )}
             {err && (
               <div ref={errRef} role="alert" className="mt-3 flex items-start gap-2 rounded-[10px] bg-palette-purpleSoft px-3.5 py-2.5 text-sm font-bold text-palette-purpleInk">
                 <Icon name="bell" className="mt-0.5 h-4 w-4 shrink-0" />
@@ -2847,12 +2868,26 @@ export default function BookingPage() {
           )}
           {/* One grid item so the section's gap-5 sits above this block, not
               between the two lines — they hug each other instead. */}
-          {(nonCancellable || nonRefundableOnCancel || (displayTotal != null && displayTotal > 0)) && (
+          {(nonCancellable || nonRefundableOnCancel || withdrawNote || (displayTotal != null && displayTotal > 0)) && (
             <div className="space-y-0.5 text-center md:col-span-2">
-              {nonCancellable && (
+              {/* The vendor's withdrawal policy for this term (00274). A no-refund term says so plainly,
+                  right under the button, before the parent pays. */}
+              {termMode && !termSlotFull && withdrawNote && (
+                <p
+                  role="note"
+                  className={`mx-auto mb-1.5 max-w-[640px] rounded-[10px] px-3.5 py-2.5 text-left text-sm ${
+                    withdrawNote.tone === "none"
+                      ? "border border-[#F4C7D5] bg-[#FEEBF2] font-bold text-[#9B1844]"
+                      : "bg-[#F4EFF0] font-semibold text-[#4a5685]"
+                  }`}
+                >
+                  <strong>{withdrawNote.title}.</strong> {withdrawNote.text}
+                </p>
+              )}
+              {nonCancellable && !(termMode && withdrawNote) && (
                 <p className="text-xs font-bold text-[#6D748D]">* This activity is non-cancellable once booked.</p>
               )}
-              {nonRefundableOnCancel && (
+              {nonRefundableOnCancel && !(termMode && withdrawNote) && (
                 <p className="text-xs font-bold text-[#6D748D]">* Payment for this activity is non-refundable, if cancelled.</p>
               )}
               {displayTotal != null && displayTotal > 0 && !monthlyBilled && (

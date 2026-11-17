@@ -21,7 +21,31 @@ const COMMISSION: Record<string, string> = {
 /** Days of notice required before a renewal to avoid being charged for it. */
 export const CANCELLATION_NOTICE_DAYS = 14;
 
-export function renewalTerms(plan: string, billing: 'monthly' | 'annual'): string {
+/** A vendor's negotiated commission (subscriptions.custom_terms = true), which
+ *  plan changes don't touch (00052) — so the plan's published rate would be
+ *  the wrong thing to show them. */
+export interface CustomCommission {
+  rate: number;
+  flatCents: number;
+  feePayer: 'platform' | 'vendor';
+}
+
+function customCommissionLine(c: CustomCommission): string {
+  const pct = `${Number((c.rate * 100).toFixed(1))}%`;
+  const flat = c.flatCents > 0 ? `$${(c.flatCents / 100).toFixed(2).replace(/\.00$/, '')} per booking` : '';
+  const parts = [c.rate > 0 ? `${pct} commission` : '', flat].filter(Boolean);
+  const stripeFees =
+    c.feePayer === 'vendor' ? " Stripe's payment processing fees still apply." : '';
+  return parts.length
+    ? ` BabyBrain charges ${parts.join(' plus ')} on classes booked through the platform.${stripeFees}`
+    : ` BabyBrain charges no commission on classes booked through the platform.${stripeFees}`;
+}
+
+export function renewalTerms(
+  plan: string,
+  billing: 'monthly' | 'annual',
+  custom?: CustomCommission | null
+): string {
   const notice = `Cancel at least ${CANCELLATION_NOTICE_DAYS} days before your renewal date. If you cancel with less than ${CANCELLATION_NOTICE_DAYS} days' notice you will be charged for the coming period. You keep access until the end of the period you have paid for.`;
 
   const billingLine =
@@ -32,8 +56,10 @@ export function renewalTerms(plan: string, billing: 'monthly' | 'annual'): strin
   // Parents pay no commission — Plus is a flat subscription, so the commission
   // sentence would be meaningless (and alarming) on that checkout.
   const commission = COMMISSION[plan];
-  const commissionLine = commission
-    ? ` BabyBrain charges ${commission} commission on classes booked through the platform, plus Stripe's payment processing fees.`
+  const commissionLine = custom
+    ? customCommissionLine(custom)
+    : commission
+    ?` BabyBrain charges ${commission} commission on classes booked through the platform, plus Stripe's payment processing fees.`
     : '';
 
   return `${billingLine} ${notice}${commissionLine}`;

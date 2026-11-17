@@ -81,6 +81,11 @@ export interface Subscription {
   status: string;
   current_period_end: string | null;
   cancel_at_period_end: boolean;
+  // Commercial terms (00051/00052). Loaded with `subscriptions(*)`. When
+  // custom_terms is true the rate was negotiated and doesn't follow the plan.
+  custom_terms?: boolean;
+  commission_rate?: number | null;
+  commission_flat_cents?: number | null;
 }
 
 interface AuthState {

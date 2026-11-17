@@ -626,7 +626,37 @@ export type OfferingOneOff = { kind: 'trial' | 'single'; price: string; note: st
 
 export type OfferingPack = { id: string; name: string; sessions: number; price: string };
 
-export function UpcomingOfferings({
+/** The "Upcoming" block: when the sessions run (days, times, venue), term by term. No prices:
+ *  those are in the Enrollment options block beside it. */
+export function UpcomingSchedule({ terms }: { terms: OfferingTerm[] }) {
+  if (terms.length === 0) return <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>;
+  return (
+    <div className="space-y-2">
+      {terms.map((t) => (
+        <div key={t.key} className="rounded-[12px] border border-[#EBE3E5] bg-[#FAF7F7] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-black text-[#34406f]">{t.name}</span>
+            <span className="rounded-full bg-[#DDF3EE] px-2 py-0.5 text-[11px] font-black text-[#0F6E56]">{t.sessions}</span>
+          </div>
+          <p className="mt-1 text-sm font-semibold text-[#59658d]">{t.range}</p>
+          <ul className="mt-2 space-y-1">
+            {t.slots.map((s, i) => (
+              <li key={i} className="text-sm font-extrabold text-[#34406f]">
+                {s.label}
+                {s.venue && <span className="font-semibold text-[#697390]"> · {s.venue}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The "Enrollment options" block: every way to join, with its price: Terms, a Trial, Single
+ *  sessions and Packages. Identical to the parent app's (the vendor's Parent view is inert, so no
+ *  Select button on packs here). */
+export function EnrolmentOptions({
   terms, oneOffs, packs,
 }: { terms: OfferingTerm[]; oneOffs: OfferingOneOff[]; packs: OfferingPack[] }) {
   const empty = terms.length === 0 && oneOffs.length === 0 && packs.length === 0;
@@ -638,18 +668,12 @@ export function UpcomingOfferings({
           <h3 className="mb-2 font-black">{terms.length === 1 ? 'Term' : 'Terms'}</h3>
           <div className="space-y-2">
             {terms.map((t) => (
-              <div key={t.key} className="rounded-[12px] border border-[#EBE3E5] bg-[#FAF7F7] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-black text-[#34406f]">{t.name}</span>
-                  <span className="rounded-full bg-[#DDF3EE] px-2 py-0.5 text-[11px] font-black text-[#0F6E56]">{t.sessions}</span>
+              <div key={t.key} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#EBE3E5] bg-[#FAF7F7] p-4">
+                <div>
+                  <span className="block font-black text-[#34406f]">{t.name}</span>
+                  <span className="text-sm font-semibold text-[#59658d]">Enrol once for the whole term · {t.sessions}</span>
                 </div>
-                <p className="mt-1 text-sm font-semibold text-[#59658d]">{t.range}</p>
-                <ul className="mt-2 space-y-0.5">
-                  {t.slots.map((s, i) => (
-                    <li key={i} className="text-xs font-semibold text-[#697390]">{s.label}{s.venue ? ` · ${s.venue}` : ''}</li>
-                  ))}
-                </ul>
-                <p className="mt-2 text-lg font-black text-[#FA4D8D]">{t.price}</p>
+                <span className="shrink-0 text-lg font-black text-[#FA4D8D]">{t.price}</span>
               </div>
             ))}
           </div>
@@ -675,7 +699,7 @@ export function UpcomingOfferings({
               <div key={p.id} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#EBE3E5] bg-[#FAF7F7] p-4">
                 <div>
                   <span className="block font-black text-[#34406f]">{p.name}</span>
-                  <span className="text-sm font-semibold text-[#59658d]">{p.sessions} {p.sessions === 1 ? 'session' : 'sessions'}</span>
+                  <span className="text-sm font-semibold text-[#59658d]">{p.sessions} {p.sessions === 1 ? 'session' : 'sessions'} · each session booked separately</span>
                 </div>
                 <span className="font-black text-[#FA4D8D]">{p.price}</span>
               </div>

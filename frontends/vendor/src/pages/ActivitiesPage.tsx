@@ -77,7 +77,7 @@ import { TermsPanel } from '@/components/TermsPanel';
 import { fetchTermSlotStats, hasLiveTerm, headlineLabel, headlineParts, saveTerm, setTermsEnabled, termHeadline, termPriceRange, termSessionsBetween, termStatus, termsPreviewEnabled, useTerms, useTermsEnabledMap, type TermSession } from '@/lib/termsPreview';
 import { SectionCard, SectionStatus, TONES, ToggleRow, type FormIssue, type Tone } from '@/components/FormKit';
 import { MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, monthlyPreviewEnabled, setMonthlyEnabled, useMonthlyEnabledMap } from '@/lib/monthlyBilling';
-import { BookModeChoice, TermComboPanel, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingOfferings, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
+import { BookModeChoice, EnrolmentOptions, TermComboPanel, TermEnrolPanel, TermPicker, TermSessionPicker, UpcomingSchedule, buildTermView, offeringFor, oneOffFor, quoteFor, sgDay, sgTime, type BookMode } from '@/components/ParentTermBooking';
 import { DayPricesEditor, dayPricesFromJson, dayPricesToJson, type DayPrices } from '@/components/DayPricesEditor';
 import { WixFormHandling } from '@/components/WixFormHandling';
 import type { Activity, ActivityCategory, VendorCategory } from '@/lib/database.types';
@@ -3585,7 +3585,7 @@ export default function ActivitiesPage() {
                   <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5">
                     <h2 className="mb-3 text-xl font-black">{termOn ? 'Upcoming' : 'Upcoming sessions'}</h2>
                     {termOn ? (
-                      <UpcomingOfferings terms={offeringTerms} oneOffs={offeringOneOffs} packs={offeringPacks} />
+                      <UpcomingSchedule terms={offeringTerms} />
                     ) : previewSessions.length === 0 ? (
                       <p className="text-sm font-semibold text-[#68718f]">No upcoming sessions scheduled.</p>
                     ) : (
@@ -3598,6 +3598,14 @@ export default function ActivitiesPage() {
                       </div>
                     )}
                   </section>
+
+                  {/* An activity with terms: every way to join, as its own block (as on the parent's activity page). */}
+                  {termOn && (
+                    <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5">
+                      <h2 className="mb-3 text-xl font-black">Enrollment options</h2>
+                      <EnrolmentOptions terms={offeringTerms} oneOffs={offeringOneOffs} packs={offeringPacks} />
+                    </section>
+                  )}
                 </div>
 
                 <aside className="h-fit rounded-[18px] border border-[#EBE3E5] bg-white p-5">

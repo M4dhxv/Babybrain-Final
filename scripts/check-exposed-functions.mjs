@@ -42,14 +42,6 @@ const ALLOWED = new Set([
   'provider_recent_bookings', 'provider_session_roster', 'provider_set_purchase_expiry',
   'provider_trial_conversion', 'mark_provider_notifications_seen', 'promote_waitlist_entry',
   'respond_to_review', 'vendor_cancel_session',
-  // Term enrolment (00243): each checks the caller itself. term_quote and
-  // term_headline_prices only read a published term's public numbers, so the
-  // logged-out pages may call them.
-  'term_quote', 'term_headline_prices', 'term_trial_remaining', 'activity_packages_closed', 'publish_term', 'enrol_in_term', 'book_term_class', 'skip_term_class',
-  // 00244: withdraw (parent / vendor), the vendor's roster and numbers, opening
-  // re-enrolment — each checks the caller. activities_with_live_terms only
-  // lists activity ids with a published term, for the Explore filter.
-  'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
   // Monthly billing (00268): each checks the caller itself (the parent's own enrolment, or the provider's manager).
   'monthly_enrol', 'monthly_give_notice', 'monthly_withdraw_notice', 'monthly_unbilled', 'monthly_settle_invoice',
   'monthly_provider_enrolments', 'monthly_provider_invoices',
@@ -79,6 +71,9 @@ const ALLOWED = new Set([
   // 00264: slot groups. The combination quote only reads a published term's public numbers;
   // the rest check the caller themselves.
   'term_combo_quote', 'enrol_in_term_combo', 'join_term_combo_waitlist', 'vendor_swap_term_slot',
+  // 00274: the parent's credit with a vendor, and recording a manual refund; each checks the caller.
+  // term_credit_hold / term_credit_settle are service-role only and must NOT be listed.
+  'term_credit_balance', 'vendor_mark_term_refund',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

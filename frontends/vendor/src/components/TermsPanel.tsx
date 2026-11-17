@@ -16,7 +16,9 @@ import {
   saveTerm, slotDates, slotLabel, slotPatternDates, slotPrice, slotsClash, swapTermSlot, termStatus, useTerms, MAX_TERM_SESSIONS, MAX_TERM_WEEKS,
   fetchTermRoster, fetchTermSlotStats, nextTermFrom, openReenrolment, publicHolidaysIn, vendorWithdraw, SG_PUBLIC_HOLIDAYS,
   fetchTermWaitlist, fetchTermWaitlistCounts, offerSessionPlace, offerTermPlace, removeFromTermWaitlist, tellTermWaitlist,
-  type RosterRow, type SlotMode, type SlotStats, type Term, type TermSlot, type TermStatusKey, type TermWaitCount, type TermWaitRow,
+  fetchTermWithdrawals, markTermRefund, withdrawalNotice,
+  type TermWithdrawal,
+  type RosterRow, type SlotMode, type SlotStats, type Term, type TermSlot, type TermStatusKey, type TermWaitCount, type TermWaitRow, type WithdrawMode,
 } from '@/lib/termsPreview';
 
 /* Type scale for this panel: bold section titles, semibold labels, and 15px
@@ -204,6 +206,89 @@ function QuickAdd({ onCreate }: { onCreate: (days: number[], times: string[]) =>
 }
 
 /**
+ * Families who withdrew from this activity's terms under their policy (00274). A money refund is
+ * processed by hand outside BabyBrain (in Stripe), then recorded here with the fee Stripe kept: the
+ * family is told they were refunded the rest. Nothing here moves money.
+ */
+function TermWithdrawals({ termIds }: { termIds: string[] }) {
+  const [rows, setRows] = useState<TermWithdrawal[] | null>(null);
+  const [fees, setFees] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const key = termIds.join(',');
+  const load = () => {
+    fetchTermWithdrawals(termIds).then(setRows).catch(() => setRows([]));
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [key]);
+
+  if (!rows || rows.length === 0) return null;
+  const due = rows.filter((r) => r.status === 'refund_due');
+  const rest = rows.filter((r) => r.status !== 'refund_due');
+  const usd = (n: number) => `SGD ${n.toFixed(2).replace(/\.00$/, '')}`;
+  const label = (r: TermWithdrawal) =>
+    r.status === 'refund_done' ? `Refunded ${usd(r.refund ?? 0)} (fee ${usd(r.fee ?? 0)})`
+    : r.status === 'credit_issued' ? `${usd(r.credit)} credit issued`
+    : r.status === 'no_refund' ? 'No refund (policy)'
+    : 'Nothing was paid';
+
+  async function mark(r: TermWithdrawal) {
+    const fee = Number(fees[r.id] ?? '0');
+    if (!Number.isFinite(fee) || fee < 0 || fee > r.paid) { toast.error(`The fee must be between 0 and ${usd(r.paid)}.`); return; }
+    setBusy(r.id);
+    try {
+      await markTermRefund(r.id, fee);
+      toast.success('Recorded. The family has been told their refund is processed.');
+      load();
+    } catch (e) {
+      toast.error((e as { message?: string })?.message ?? 'Could not record that refund');
+    }
+    setBusy(null);
+  }
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5">
+      <h4 className="text-lg font-bold text-gray-900">Withdrawals</h4>
+      <p className={cn('mt-0.5', hintCls)}>
+        Families who left a term before it started. Refund money by hand in Stripe, then record it here so they are told.
+      </p>
+      {due.length > 0 && (
+        <div className="mt-4 space-y-3">
+          {due.map((r) => (
+            <div key={r.id} className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <p className="text-[15px] font-bold text-amber-950">
+                Refund due: {usd(r.paid)} paid{r.childName ? ` for ${r.childName}` : ''} · {r.termName}
+              </p>
+              <p className="mt-0.5 text-[13px] font-semibold text-amber-900">
+                Refund what they paid less the fee Stripe kept on that payment (shown on the payment in your Stripe dashboard).
+              </p>
+              <div className="mt-3 flex flex-wrap items-end gap-3">
+                <div className="w-44">
+                  <label className={labelCls}>Fee Stripe kept (SGD)</label>
+                  <NumberInput min="0" step="any" className={inputCls} value={fees[r.id] ?? ''} placeholder="0" onChange={(e) => setFees((f) => ({ ...f, [r.id]: e.target.value }))} aria-label="Processing fee kept" />
+                </div>
+                <Button disabled={busy === r.id} onClick={() => mark(r)} className="h-11 rounded-xl px-5 text-[15px] font-bold gradient-primary text-white hover:opacity-90">
+                  {busy === r.id ? 'Saving…' : `Mark refunded (${usd(Math.max(0, r.paid - (Number(fees[r.id]) || 0)))})`}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {rest.length > 0 && (
+        <ul className="mt-4 divide-y divide-gray-100 text-[14px]">
+          {rest.slice(0, 8).map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span className="font-semibold text-gray-800">{r.childName ?? 'A child'} · {r.termName}</span>
+              <span className="text-gray-600">{label(r)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
  * "Terms" tab of the Manage schedule pop-up — a bundle of weekly sessions a
  * parent enrols in once (a term, a month, a block of weeks), instead of
  * booking session by session.
@@ -238,6 +323,7 @@ export function TermsPanel({
     return (
       <div className="space-y-5">
         {banner}
+        <TermWithdrawals termIds={terms.map((t) => t.id)} />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h4 className="text-lg font-bold text-gray-900">Terms for {activityTitle}</h4>
@@ -1131,6 +1217,77 @@ function TermForm({
             )}
           </div>
         )}
+      </Section>
+
+      <Section n={6} title="Withdrawing" subtitle="Whether a family can leave before the term starts, and what they get back. Once it has started they can't withdraw online: they ask you.">
+        {(() => {
+          // A published term keeps the policy its families enrolled under. One with no policy yet
+          // (an older term) can still be given one.
+          const locked = term.status === 'published' && term.withdrawSet;
+          const choice: 'unset' | 'no' | WithdrawMode = !t.withdrawSet ? 'unset' : !t.withdrawAllowed ? 'no' : t.withdrawMode;
+          const choose = (c: 'no' | WithdrawMode) =>
+            set(c === 'no' ? { withdrawSet: true, withdrawAllowed: false } : { withdrawSet: true, withdrawAllowed: true, withdrawMode: c });
+          const options: { id: 'no' | WithdrawMode; title: string; text: string }[] = [
+            { id: 'no', title: 'No withdrawals', text: "Parents can't withdraw online. They contact you, and you can withdraw them from your portal." },
+            { id: 'money', title: 'Withdraw: money back, less processing fee', text: "They get what they paid less Stripe's processing fee. You process the refund by hand and record it here." },
+            { id: 'credit', title: 'Withdraw: credit for another term', text: 'They get a dollar credit with you, spendable on any later term, for a number of days you choose.' },
+            { id: 'none', title: 'Withdraw: no refund', text: "They can leave, but get nothing back. Parents see a no-refund disclaimer beside the booking button." },
+          ];
+          return (
+            <>
+              {choice === 'unset' && (
+                <p className="rounded-xl bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-900">
+                  No policy chosen yet, so this term follows your activity's cancellation settings. Choose one below; parents then see it beside the booking button.
+                </p>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                {options.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    aria-pressed={choice === o.id}
+                    disabled={locked}
+                    onClick={() => choose(o.id)}
+                    className={cn(
+                      'rounded-xl border p-4 text-left transition-colors',
+                      choice === o.id ? 'border-[#FA4D8D] bg-[#FEEBF2]' : 'border-gray-200 bg-white hover:border-[#FA4D8D]',
+                      locked && 'cursor-default opacity-70 hover:border-gray-200',
+                      locked && choice === o.id && 'opacity-100 hover:border-[#FA4D8D]',
+                    )}
+                  >
+                    <span className="block text-[15px] font-bold text-gray-900">{o.title}</span>
+                    <span className={cn('mt-1 block', hintCls)}>{o.text}</span>
+                  </button>
+                ))}
+              </div>
+              {t.withdrawSet && t.withdrawAllowed && t.withdrawMode === 'credit' && (
+                <div className="grid grid-cols-1 gap-4 rounded-xl bg-gray-50 p-4 sm:grid-cols-2">
+                  <div>
+                    <label className={labelCls}>Credit lasts (days)</label>
+                    <NumberInput min="1" max="1825" disabled={locked} className={inputCls} value={String(t.creditDays)} onChange={(e) => set({ creditDays: Math.max(1, Math.min(1825, Number(e.target.value) || 1)) })} aria-label="Days a credit lasts" />
+                  </div>
+                  <div className="flex items-end">
+                    <p className={hintCls}>The credit is for the amount they paid, and can only be spent on your terms.</p>
+                  </div>
+                </div>
+              )}
+              {t.withdrawSet && (() => {
+                const note = withdrawalNotice(
+                  { set: t.withdrawSet, allowed: t.withdrawAllowed, mode: t.withdrawAllowed ? t.withdrawMode : null, creditDays: t.creditDays },
+                  null,
+                  provider?.business_name ?? null
+                );
+                return note ? (
+                  <div className={cn('rounded-xl px-4 py-3 text-[13px]', note.tone === 'none' ? 'border border-[#F4C7D5] bg-[#FEEBF2] font-bold text-[#9B1844]' : 'bg-gray-50 font-semibold text-gray-700')}>
+                    <span className="mb-0.5 block text-[11px] font-bold uppercase tracking-wide opacity-70">What parents read beside the booking button</span>
+                    <strong>{note.title}.</strong> {note.text}
+                  </div>
+                ) : null;
+              })()}
+              {locked && <p className={hintCls}>Fixed once a term is published, so families keep the terms they enrolled under.</p>}
+            </>
+          );
+        })()}
       </Section>
 
       <section className="rounded-2xl border-2 border-teal-200 bg-teal-50/50 p-5">

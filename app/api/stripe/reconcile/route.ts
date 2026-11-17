@@ -188,6 +188,7 @@ export async function POST(request: Request) {
       bookingId,
       paymentIntent,
       scopeUserId: user.id,
+      termGroupId: session.metadata.term_booking === 'term' ? groupId : null,
     });
     // Nothing was settled (the database did not answer). Say so rather than
     // "applied": the webhook is retried by Stripe and settles it.

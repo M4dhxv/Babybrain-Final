@@ -1,10 +1,17 @@
-import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
-import { CheckCircle2, Loader2, Shield, Wallet } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
+import { CheckCircle2, CreditCard, Loader2, Shield, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { apiPost } from '@/lib/api';
+import { apiPost, ApiError } from '@/lib/api';
 import { useAuth } from '@/auth/AuthProvider';
+import { PLAN_META, commissionLabel } from '@/lib/plans';
+import { needsRequiredPlan, requiredPlan } from '@/lib/requiredPlan';
+
+// After Stripe Checkout succeeds, the webhook writes the plan a few seconds
+// later. Poll for it rather than showing the "add card" step again meanwhile.
+const CONFIRM_POLL_MS = 2500;
+const CONFIRM_POLL_TRIES = 12;
 
 const TERMS_URL = `${window.location.origin}${import.meta.env.BASE_URL}#/terms`;
 const PRIVACY_URL = `${TERMS_URL}#privacy`;
@@ -28,16 +35,44 @@ function connectSkippedKey(providerId: string) {
  * portal immediately, and the choice is remembered per browser — every
  * subsequent full load is still an implicit re-prompt for as long as
  * `payouts_enabled` stays false, but pressing Skip won't nag again this session.
+ * Coming back from Stripe's onboarding (`?connect=done`) counts the same as
+ * Skip: payouts usually stay off for a while after that, while Stripe
+ * verifies the business, and asking them to connect again would be wrong.
+ *
+ * Third step, only for an owner handed over with a plan agreed in advance
+ * (`app_metadata.onboarding_plan`, see lib/requiredPlan.ts): start that plan
+ * on Stripe Checkout, card and all. This one IS blocking. Checkout returns to
+ * `#/billing?status=success|cancelled`, which lands back here.
  */
 export default function OnboardingGate() {
-  const { provider, refreshProvider } = useAuth();
+  const { provider, refreshProvider, session, subscription, signOut } = useAuth();
+  const params = new URLSearchParams(useLocation().search);
+  const checkoutStatus = params.get('status');
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [agreedMarketing, setAgreedMarketing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [skippedConnect, setSkippedConnect] = useState(
-    () => !!provider && sessionStorage.getItem(connectSkippedKey(provider.id)) === '1'
-  );
+  const [skippedConnect, setSkippedConnect] = useState(() => {
+    if (!provider) return false;
+    if (params.get('connect') === 'done') {
+      sessionStorage.setItem(connectSkippedKey(provider.id), '1');
+      return true;
+    }
+    return sessionStorage.getItem(connectSkippedKey(provider.id)) === '1';
+  });
+
+  const plan = requiredPlan(session);
+  const needsPlan = needsRequiredPlan(session, subscription);
+  const [confirmTries, setConfirmTries] = useState(0);
+  const confirming = needsPlan && checkoutStatus === 'success' && confirmTries < CONFIRM_POLL_TRIES;
+
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => {
+      void refreshProvider().finally(() => setConfirmTries((n) => n + 1));
+    }, CONFIRM_POLL_MS);
+    return () => clearTimeout(t);
+  }, [confirming, confirmTries, refreshProvider]);
 
   if (!provider) return null;
 
@@ -68,6 +103,26 @@ export default function OnboardingGate() {
       else setError('Could not open Stripe just now — please try again.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Payments aren’t set up on this account yet.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startPlan() {
+    setError(null);
+    setBusy(true);
+    try {
+      const { url } = await apiPost<{ url?: string }>('/api/vendor/stripe/subscription', {
+        provider_id: provider!.id,
+        plan,
+        billing: 'monthly',
+      });
+      if (url) window.location.assign(url);
+      else setError('Could not open Stripe just now — please try again.');
+    } catch (e) {
+      // 409 = Stripe already has this plan live and our row is just behind.
+      if (e instanceof ApiError && e.status === 409) await refreshProvider();
+      else setError(e instanceof Error ? e.message : 'Could not open Stripe just now — please try again.');
     } finally {
       setBusy(false);
     }
@@ -206,7 +261,91 @@ export default function OnboardingGate() {
     );
   }
 
-  // Terms accepted, and either payouts are on or the owner chose to skip
-  // Connect for now — let them into the portal.
+  if (needsPlan && plan) {
+    const meta = PLAN_META[plan];
+    return shell(
+      <>
+        <div className="mb-6 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+            <CreditCard className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Activate your {meta.label} plan</h1>
+            {/* Their own rate: a vendor handed over on agreed terms often has a
+                negotiated one (subscriptions.custom_terms), not the plan's. */}
+            <p className="text-sm text-gray-500">
+              {meta.price} · {commissionLabel(plan, subscription)} · {provider.business_name}
+            </p>
+          </div>
+        </div>
+
+        {confirming ? (
+          <div className="flex items-center gap-3 rounded-lg bg-blue-50 px-3 py-3 text-sm text-blue-800">
+            <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" />
+            Payment received. Confirming your plan with Stripe…
+          </div>
+        ) : (
+          <>
+            {checkoutStatus === 'success' && (
+              <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+                Stripe is taking longer than usual to confirm your payment. Please don&rsquo;t pay again —
+                refresh this page in a minute.
+              </div>
+            )}
+            {checkoutStatus === 'cancelled' && (
+              <div className="mb-4 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                Checkout cancelled — you have not been charged.
+              </div>
+            )}
+            {error && (
+              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-2 mb-6 text-sm text-gray-600">
+              {meta.perks.map((perk) => (
+                <p key={perk} className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" />
+                  {perk}
+                </p>
+              ))}
+              <p className="pt-1 text-gray-500">
+                You&rsquo;ll add your card on Stripe&rsquo;s secure page. Billed monthly, cancel any time from
+                Billing.
+              </p>
+            </div>
+
+            {checkoutStatus === 'success' ? (
+              <Button
+                onClick={() => window.location.reload()}
+                className="gradient-primary w-full rounded-xl text-white hover:opacity-90"
+              >
+                Refresh
+              </Button>
+            ) : (
+              <Button
+                onClick={startPlan}
+                disabled={busy}
+                className="gradient-primary w-full rounded-xl text-white hover:opacity-90"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add card & activate'}
+              </Button>
+            )}
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="mt-3 w-full text-center text-sm text-gray-500 hover:text-gray-700"
+        >
+          Sign out
+        </button>
+      </>
+    );
+  }
+
+  // Terms accepted, either payouts are on or the owner chose to skip Connect
+  // for now, and no agreed plan is outstanding — let them into the portal.
   return <Outlet />;
 }

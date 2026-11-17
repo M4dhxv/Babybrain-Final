@@ -52,6 +52,9 @@ export type TermGroup = { id: string; name: string };
  *  'flexible' = several groups, pick one slot from each and keep that pair every week. */
 export type SlotMode = 'simple' | 'flexible';
 
+/** What a family gets back when they withdraw before a term starts (00274). */
+export type WithdrawMode = 'money' | 'credit' | 'none';
+
 export type TermSlot = {
   id: string;
   /** The group this slot belongs to. */
@@ -109,6 +112,17 @@ export type Term = {
   previousTermId: string | null;
   /** While in the future, only families from the previous term can enrol. */
   priorityUntil: string | null;
+  /**
+   * What happens when a parent withdraws BEFORE the term starts (00274). `withdrawSet` false = an older
+   * term with no policy: the activity's own cancellation settings still apply. After the term starts a
+   * parent can't withdraw online whatever this says.
+   */
+  withdrawSet: boolean;
+  withdrawAllowed: boolean;
+  /** money = what they paid less Stripe's fee (processed by hand); credit = dollar credit for another term; none = no refund. */
+  withdrawMode: WithdrawMode;
+  /** How long a credit lasts. */
+  creditDays: number;
   slotMode: SlotMode;
   groups: TermGroup[];
   slots: TermSlot[];
@@ -129,6 +143,10 @@ export function normalizeTerm(t: Term): Term {
     siblingDiscountPct: t.siblingDiscountPct ?? 0,
     previousTermId: t.previousTermId ?? null,
     priorityUntil: t.priorityUntil ?? null,
+    withdrawSet: t.withdrawSet ?? false,
+    withdrawAllowed: t.withdrawAllowed ?? false,
+    withdrawMode: t.withdrawMode ?? 'none',
+    creditDays: t.creditDays ?? 365,
     slots: t.slots.map((s) => ({
       ...s,
       groupId: s.groupId && groups.some((g) => g.id === s.groupId) ? s.groupId : groups[0].id,
@@ -182,6 +200,9 @@ type TermRow = {
   sibling_discount_pct: number | null;
   previous_term_id: string | null;
   priority_until: string | null;
+  withdraw_allowed?: boolean | null;
+  withdraw_refund_mode?: WithdrawMode | null;
+  credit_valid_days?: number | null;
   status: 'draft' | 'published' | 'archived';
   slot_mode: SlotMode | null;
   term_slot_groups: { id: string; name: string; position: number }[] | null;
@@ -210,6 +231,10 @@ function fromRow(r: TermRow): Term {
     siblingDiscountPct: r.sibling_discount_pct ?? 0,
     previousTermId: r.previous_term_id,
     priorityUntil: r.priority_until,
+    withdrawSet: r.withdraw_allowed != null,
+    withdrawAllowed: r.withdraw_allowed === true,
+    withdrawMode: r.withdraw_refund_mode ?? 'none',
+    creditDays: r.credit_valid_days ?? 365,
     status: r.status === 'published' ? 'published' : 'draft',
     slotMode: r.slot_mode ?? 'simple',
     groups: [...(r.term_slot_groups ?? [])].sort((a, b) => a.position - b.position).map((g) => ({ id: g.id, name: g.name })),
@@ -251,6 +276,15 @@ const termFields = (t: Term) => ({
   allow_packages: t.allowPackages,
   sibling_discount_pct: Math.min(100, Math.max(0, Math.round(t.siblingDiscountPct || 0))),
   previous_term_id: t.previousTermId,
+  // The withdrawal policy (00274) is only sent once the vendor has chosen one, so a term saved
+  // without it works against a database that has not had that migration yet.
+  ...(t.withdrawSet
+    ? {
+        withdraw_allowed: t.withdrawAllowed,
+        withdraw_refund_mode: t.withdrawAllowed ? t.withdrawMode : null,
+        credit_valid_days: Math.min(1825, Math.max(1, Math.round(t.creditDays || 365))),
+      }
+    : {}),
 });
 
 const groupRow = (termId: string, g: TermGroup, position: number) => ({ id: g.id, term_id: termId, name: g.name.trim() || 'Group', position });
@@ -575,6 +609,11 @@ export function blankTerm(activityId: string, defaults: { price?: number | null;
     siblingDiscountPct: 0,
     previousTermId: null,
     priorityUntil: null,
+    // A new term starts with the strictest choice: no withdrawals. The vendor decides in "Withdrawing".
+    withdrawSet: true,
+    withdrawAllowed: false,
+    withdrawMode: 'none',
+    creditDays: 365,
     slots: [
       {
         id: newId(),
@@ -981,4 +1020,109 @@ export const SG_PUBLIC_HOLIDAYS: Record<string, string> = {
 /** The slot's dates that fall on a public holiday. */
 export function publicHolidaysIn(slot: DateRule): string[] {
   return slotPatternDates(slot).filter((d) => d in SG_PUBLIC_HOLIDAYS);
+}
+
+/**
+ * What a parent reads beside the booking button about leaving a term (00274). A copy of
+ * withdrawalNotice() in the parent app's lib/terms.ts: keep the two wordings in step.
+ * `tone` 'none' is the no-refund disclaimer. Null when no policy is set.
+ */
+export function withdrawalNotice(
+  p: { set: boolean; allowed: boolean; mode: WithdrawMode | null; creditDays: number },
+  startLabel: string | null,
+  providerName: string | null
+): { tone: 'info' | 'none'; title: string; text: string } | null {
+  if (!p.set) return null;
+  const who = providerName || 'the provider';
+  const until = startLabel ? ` until the term starts on ${startLabel}` : ' until the term starts';
+  if (!p.allowed) {
+    return {
+      tone: 'none',
+      title: 'No withdrawals, no refund',
+      text: `You can't withdraw from this term online, and payment for it is non-refundable. If something changes, contact ${who}.`,
+    };
+  }
+  if (p.mode === 'none') {
+    return {
+      tone: 'none',
+      title: 'No refund',
+      text: `You can withdraw${until}, but payment for this term is non-refundable: you won't get money or credit back.`,
+    };
+  }
+  if (p.mode === 'credit') {
+    return {
+      tone: 'info',
+      title: 'Withdrawing',
+      text: `You can withdraw${until}. You'll get a credit for what you paid, to use on another term with ${who}, valid for ${p.creditDays} days. It isn't paid back to your card.`,
+    };
+  }
+  return {
+    tone: 'info',
+    title: 'Withdrawing',
+    text: `You can withdraw${until}. You'll get back what you paid less the payment-processing fee Stripe keeps. Refunds are processed by hand, so allow some time.`,
+  };
+}
+
+/* ── Withdrawals under a term's policy (00274) ── */
+
+export type TermWithdrawal = {
+  id: string;
+  termId: string;
+  termName: string;
+  childName: string | null;
+  outcome: WithdrawMode;
+  status: 'refund_due' | 'refund_done' | 'credit_issued' | 'no_refund' | 'nothing_paid';
+  /** Dollars paid in cash, and the credit handed back. */
+  paid: number;
+  credit: number;
+  /** Money refunds only, once processed: what the processor kept, and what went back. */
+  fee: number | null;
+  refund: number | null;
+  createdAt: string;
+  processedAt: string | null;
+};
+
+type WithdrawalDbRow = {
+  id: string; term_id: string; outcome: WithdrawMode; status: TermWithdrawal['status'];
+  paid_cents: number; credit_cents: number; fee_cents: number | null; refund_cents: number | null;
+  created_at: string; processed_at: string | null;
+  terms: { name: string } | null; children: { name: string } | null;
+};
+
+/** Who has withdrawn from these terms, newest first. Reading is limited by the database to the vendor's own team. */
+export async function fetchTermWithdrawals(termIds: string[]): Promise<TermWithdrawal[]> {
+  if (termIds.length === 0) return [];
+  const { data, error } = await db
+    .from('term_withdrawals')
+    .select('id, term_id, outcome, status, paid_cents, credit_cents, fee_cents, refund_cents, created_at, processed_at, terms(name), children(name)')
+    .in('term_id', termIds)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as unknown as WithdrawalDbRow[]).map((r) => ({
+    id: r.id,
+    termId: r.term_id,
+    termName: r.terms?.name ?? 'Term',
+    childName: r.children?.name ?? null,
+    outcome: r.outcome,
+    status: r.status,
+    paid: toDollars(r.paid_cents),
+    credit: toDollars(r.credit_cents),
+    fee: r.fee_cents != null ? toDollars(r.fee_cents) : null,
+    refund: r.refund_cents != null ? toDollars(r.refund_cents) : null,
+    createdAt: r.created_at,
+    processedAt: r.processed_at,
+  }));
+}
+
+/**
+ * Record that a money refund has been processed by hand: `feeDollars` is what the payment processor
+ * kept; the family is told they were refunded the rest. This does NOT move any money.
+ */
+export async function markTermRefund(withdrawalId: string, feeDollars: number, note?: string): Promise<void> {
+  const { error } = await db.rpc('vendor_mark_term_refund', {
+    p_withdrawal_id: withdrawalId,
+    p_fee_cents: toCents(feeDollars),
+    p_note: note?.trim() || null,
+  });
+  if (error) throw error;
 }

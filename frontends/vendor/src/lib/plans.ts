@@ -77,6 +77,30 @@ export const PLAN_META: Record<string, PlanMeta> = {
 
 export const planMeta = (plan: string | null | undefined): PlanMeta => PLAN_META[plan ?? 'free'] ?? PLAN_META.free;
 
+/** The commercial terms on a vendor's `subscriptions` row (00051/00052). */
+export interface CommissionTerms {
+  custom_terms?: boolean;
+  commission_rate?: number | null;
+  commission_flat_cents?: number | null;
+}
+
+/**
+ * What THIS vendor pays per booking. A negotiated deal (`custom_terms`) wins
+ * over the plan's published rate and survives plan changes, so a bespoke
+ * vendor on Pro must not be told "10% commission". Everyone else gets the
+ * plan's line, unchanged.
+ */
+export function commissionLabel(plan: string | null | undefined, terms: CommissionTerms | null | undefined): string {
+  if (!terms?.custom_terms || terms.commission_rate == null) return planMeta(plan).commission;
+  const rate = Number(terms.commission_rate);
+  const flat = terms.commission_flat_cents ?? 0;
+  const parts = [
+    rate > 0 ? `${Number((rate * 100).toFixed(1))}% commission` : '',
+    flat > 0 ? `$${(flat / 100).toFixed(2).replace(/\.00$/, '')}/booking` : '',
+  ].filter(Boolean);
+  return parts.length ? parts.join(' + ') : 'No booking commission';
+}
+
 /** The next tier up from a given plan, for "upgrade" CTAs. Pro (`pro`/`premium` in the DB) is the top tier. */
 export const nextPlan = (plan: string | null | undefined): PlanMeta | null => {
   const order = ['free', 'growth', 'pro'];

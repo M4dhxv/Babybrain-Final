@@ -16,7 +16,7 @@ import { termHeadlineParts, useTermHeadline, usePackagesOpen } from "../lib/term
 import { cacheFetch } from "../lib/queryCache";
 import { goTo, loginUrl, getParam, scrollToWhenReady, rememberExploreUrl, exploreReturnHref, requestExploreRestore } from "../lib/nav";
 import { sgDateTime, sgDay, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
-import { UpcomingOfferings, type OfferingOneOff, type OfferingTerm } from "../components/TermBookingPreview";
+import { EnrolmentOptions, UpcomingSchedule, type OfferingOneOff, type OfferingPack, type OfferingTerm } from "../components/TermBookingPreview";
 import { termsPreviewEnabled } from "../lib/termsPreview";
 import { useActivityTerms, flexibleOffering } from "../lib/terms";
 import { SessionSchedule } from "../components/SessionSchedule";
@@ -691,6 +691,11 @@ export default function ActivityDetailPage() {
     ...(trialTerm ? [{ kind: "trial" as const, price: money(trialTerm.trialPrice), note: `Try a session before you enrol. ${trialTerm.trialLimit} per child.` }] : []),
     ...(singleTerm ? [{ kind: "single" as const, price: money(singleTerm.singlePrice), note: "Pick one session and pay as you go." }] : []),
   ];
+  // Packs sit with the other ways to join (not in a card of their own) when the activity has terms.
+  const offeringPacks: OfferingPack[] =
+    packagesOpen && activity.wix_service_type !== "COURSE"
+      ? packs.map((p) => ({ id: p.id, name: p.name, sessions: p.credits, price: money(p.price_cents / 100) }))
+      : [];
   // A private session at the customer's own home has no fixed address to
   // show here, so it says so in the vendor's own words instead.
   const nextVenueAddress =
@@ -820,7 +825,7 @@ export default function ActivityDetailPage() {
               then Reviews. With no packs to show, sessions takes the full
               width rather than leaving a half-empty row. */}
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <section className={`min-w-0 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${packs.length === 0 || !packagesOpen || activity.wix_service_type === "COURSE" ? " md:col-span-2" : ""}`}>
+            <section className={`min-w-0 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card${!showOfferings && (packs.length === 0 || !packagesOpen || activity.wix_service_type === "COURSE") ? " md:col-span-2" : ""}`}>
               <h2 className="mb-3 text-xl font-black">{activity.wix_service_type === "COURSE" ? "Course schedule" : showOfferings ? "Upcoming" : "Upcoming sessions"}</h2>
               {activity.wix_service_type === "COURSE" && sessions.length > 0 ? (
                 <>
@@ -838,7 +843,7 @@ export default function ActivityDetailPage() {
                 </>
               ) : showOfferings && !sessionsLoading ? (
                 <div className="bb-reveal">
-                  <UpcomingOfferings terms={offeringTerms} oneOffs={offeringOneOffs} packs={[]} />
+                  <UpcomingSchedule terms={offeringTerms} />
                 </div>
               ) : sessionsLoading ? (
                 <div className="animate-pulse space-y-2">
@@ -858,7 +863,31 @@ export default function ActivityDetailPage() {
               )}
             </section>
 
-            {packs.length > 0 && packagesOpen && activity.wix_service_type !== "COURSE" && (
+            {/* An activity with terms: every way to join in one block, beside the schedule above. */}
+            {showOfferings && !sessionsLoading && (
+              <section className="min-w-0 rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
+                <h2 className="mb-3 text-xl font-black">Enrollment options</h2>
+                <div className="bb-reveal">
+                  <EnrolmentOptions
+                    terms={offeringTerms}
+                    oneOffs={offeringOneOffs}
+                    packs={offeringPacks}
+                    selectedPackId={pickedPackId}
+                    onSelectPack={setPickedPackId}
+                  />
+                </div>
+                {pickedPackId && (
+                  <p role="status" className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-palette-pinkTint px-3 py-2 text-sm font-bold text-[#34406f]">
+                    <span>Click on <a href={bookHref} className="underline underline-offset-2 hover:text-baby-cta">Book</a> to proceed with this purchase.</span>
+                    <button type="button" onClick={() => setPickedPackId(null)} className="text-xs font-black text-[#68718f] underline underline-offset-2 hover:text-baby-cta">
+                      Clear
+                    </button>
+                  </p>
+                )}
+              </section>
+            )}
+
+            {!showOfferings && packs.length > 0 && packagesOpen && activity.wix_service_type !== "COURSE" && (
               <section className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card">
                 <h2 className="mb-3 text-xl font-black">Packages</h2>
                 <div className="grid gap-3">
