@@ -35,7 +35,7 @@ export async function finalizeWixBookingCheckout(
 
   const { data: rows } = await admin
     .from('bookings')
-    .select('id, user_id, payment_status, amount')
+    .select('id, user_id, payment_status, amount, credit_cents')
     .in('id', bookingIds);
   if (!rows || rows.length === 0) return;
   if (rows.every((r) => r.payment_status === 'paid')) return; // already finalized
@@ -74,7 +74,17 @@ export async function finalizeWixBookingCheckout(
   const paymentIntent =
     typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null;
 
+  // Make-up credit (00276): with no card payment behind it, credit paid the whole seat. Such a seat is
+  // confirmed the way a redeemed token always was: payment_status stays 'none' and paid_by_credit is set.
+  const creditOnly =
+    !paymentIntent && rows.every((r) => Number(r.credit_cents ?? 0) >= Math.round(Number(r.amount ?? 0) * 100));
+
   if (!result.ok) {
+    if (creditOnly) {
+      // Nothing was charged, so nothing is "paid but unconfirmed": cancel the seats, which hands the credit back.
+      await admin.from('bookings').update({ status: 'cancelled', cancel_reason: 'The slot was no longer available' }).in('id', bookingIds);
+      return;
+    }
     // Payment succeeded but the slot's gone — lost a race on Wix while the
     // parent was on Stripe. There's no auto-refund here (a real money
     // action deserves a human, not a webhook), so this is left paid but not
@@ -95,7 +105,8 @@ export async function finalizeWixBookingCheckout(
     .from('bookings')
     .update({
       status: 'confirmed',
-      payment_status: 'paid',
+      payment_status: creditOnly ? 'none' : 'paid',
+      ...(creditOnly ? { paid_by_credit: true } : {}),
       stripe_payment_intent: paymentIntent,
       wix_booking_id: result.wixBookingId,
     })
@@ -109,12 +120,15 @@ export async function finalizeWixBookingCheckout(
   // across every seat, keyed to the first booking row exactly as the native
   // path keys to its single one. recordSale is idempotent on the payment
   // intent, so the webhook and /api/stripe/reconcile racing is safe.
-  const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0);
-  await recordSale(admin, {
-    providerId: activity.provider_id,
-    source: 'booking',
-    bookingId: rows[0].id,
-    grossCents,
-    paymentIntentId: paymentIntent,
-  });
+  // Card money only: the part paid with make-up credit was earned when that credit was bought (00276).
+  const grossCents = rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100) - Number(r.credit_cents ?? 0), 0);
+  if (grossCents > 0) {
+    await recordSale(admin, {
+      providerId: activity.provider_id,
+      source: 'booking',
+      bookingId: rows[0].id,
+      grossCents,
+      paymentIntentId: paymentIntent,
+    });
+  }
 }

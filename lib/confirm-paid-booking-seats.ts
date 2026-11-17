@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { releaseHeldForBooking } from '@/lib/make-up-credit';
 
 type Admin = SupabaseClient<Database>;
 
@@ -11,6 +12,10 @@ export interface ConfirmPaidSeatsResult {
    *  token for the vendor and the seat stays on the waitlist. The money is
    *  kept, so these count toward the vendor's earnings like confirmed seats. */
   tokenIds: string[];
+  /** Make-up credit that was reserved on seats that then could not be seated (00276). It has been handed
+   *  back to the parent's balance, so the card only paid for the rest: callers take it off the seat's
+   *  gross when recording the sale. */
+  unseatedCreditCents: number;
   /** The confirm call itself failed (database unreachable or timed out), so
    *  nothing was settled. The caller must not report this checkout as handled:
    *  the webhook answers 500 so Stripe delivers it again. */
@@ -71,7 +76,7 @@ export async function confirmPaidBookingSeats(
     const { data } = await q;
     ids = (data ?? []).map((r) => r.id);
   }
-  if (ids.length === 0) return { confirmedIds: [], tokenIds: [] };
+  if (ids.length === 0) return { confirmedIds: [], tokenIds: [], unseatedCreditCents: 0 };
 
   const { data: rows, error } = await admin.rpc('confirm_paid_booking_seats', {
     p_seat_ids: ids,
@@ -79,25 +84,28 @@ export async function confirmPaidBookingSeats(
   });
   if (error || !rows) {
     console.error('[confirmPaidBookingSeats] RPC failed:', error?.message ?? 'no rows returned');
-    return { confirmedIds: [], tokenIds: [], failed: true };
+    return { confirmedIds: [], tokenIds: [], unseatedCreditCents: 0, failed: true };
   }
 
   const confirmedIds = rows.filter((r) => r.confirmed).map((r) => r.id);
   const unseated = rows.filter((r) => !r.confirmed).map((r) => r.id);
 
   const tokenIds: string[] = [];
+  let unseatedCreditCents = 0;
   for (const id of unseated) {
-    if (await compensateUnseatedPaidSeat(admin, id, opts.paymentIntent)) tokenIds.push(id);
+    const r = await compensateUnseatedPaidSeat(admin, id, opts.paymentIntent);
+    unseatedCreditCents += r.creditCents;
+    if (r.ok) tokenIds.push(id);
   }
 
   // A term enrolment paid partly with credit (00274): spend the credit set aside for this checkout.
   // Safe to run again when Stripe redelivers. If it cannot be spent the caller must not call this
   // checkout handled, or the credit would lapse back to the family while the seats stayed paid.
   if (opts.termGroupId && confirmedIds.length > 0 && !(await settleTermCredit(admin, opts.termGroupId))) {
-    return { confirmedIds, tokenIds, failed: true };
+    return { confirmedIds, tokenIds, unseatedCreditCents, failed: true };
   }
 
-  return { confirmedIds, tokenIds };
+  return { confirmedIds, tokenIds, unseatedCreditCents };
 }
 
 /**
@@ -158,17 +166,29 @@ async function compensateUnseatedPaidSeat(
   admin: Admin,
   bookingId: string,
   paymentIntent: string | null
-): Promise<boolean> {
+): Promise<{ ok: boolean; creditCents: number }> {
+  let creditCents = 0;
   try {
     const { data: booking } = await admin
       .from('bookings')
-      .select('id, user_id, child_id, provider_id, session_id, amount, stripe_payment_intent, status, payment_status')
+      .select('id, user_id, child_id, provider_id, session_id, amount, stripe_payment_intent, status, payment_status, credit_cents')
       .eq('id', bookingId)
       .maybeSingle();
-    if (!booking || !booking.user_id || !booking.provider_id) return false;
-    if (booking.payment_status !== 'none') return false;
-    if (booking.status !== 'waitlisted' && booking.status !== 'cancelled') return false;
-    if (Math.round(Number(booking.amount ?? 0) * 100) <= 0) return false;
+    if (!booking || !booking.user_id || !booking.provider_id) return { ok: false, creditCents };
+    if (booking.payment_status !== 'none') return { ok: false, creditCents };
+    if (booking.status !== 'waitlisted' && booking.status !== 'cancelled') return { ok: false, creditCents };
+    if (Math.round(Number(booking.amount ?? 0) * 100) <= 0) return { ok: false, creditCents };
+
+    // Make-up credit that was part of this payment goes back to the parent's balance as credit (it was
+    // never cash); the token below is worth only what the card actually paid. The seat's own credit is
+    // already back when the seat was cancelled or fell off the waitlist, so read it before returning more.
+    const credit = Number((booking as { credit_cents?: number | null }).credit_cents ?? 0);
+    if (credit > 0) {
+      await releaseHeldForBooking(admin, bookingId);
+      creditCents = credit;
+    }
+    const cardCents = Math.max(Math.round(Number(booking.amount ?? 0) * 100) - credit, 0);
+    if (cardCents <= 0) return { ok: true, creditCents };
 
     const { data: existing } = await admin
       .from('make_up_tokens')
@@ -176,13 +196,13 @@ async function compensateUnseatedPaidSeat(
       .eq('origin_booking_id', bookingId)
       .limit(1)
       .maybeSingle();
-    if (existing) return true;
+    if (existing) return { ok: true, creditCents };
 
     // The RPC stamps the payment intent on a waitlisted seat it could not
     // confirm, but leaves a cancelled one alone. Without it there is no record
     // of what paid for this token, so write it before issuing anything.
     const intent = booking.stripe_payment_intent ?? paymentIntent;
-    if (!intent) return false;
+    if (!intent) return { ok: false, creditCents };
     if (!booking.stripe_payment_intent) {
       await admin.from('bookings').update({ stripe_payment_intent: intent }).eq('id', bookingId);
     }
@@ -199,14 +219,16 @@ async function compensateUnseatedPaidSeat(
         origin_booking_id: bookingId,
         status: 'issued',
         auto_issued: true,
+        amount_cents: cardCents,
+        balance_cents: cardCents,
       })
       .select('id')
       .single();
     if (error || !token) {
       // 23505: the other of webhook / reconcile issued it a moment ago.
-      if (error?.code === '23505') return true;
+      if (error?.code === '23505') return { ok: true, creditCents };
       console.error('[compensateUnseatedPaidSeat] token insert failed for', bookingId, error?.message);
-      return false;
+      return { ok: false, creditCents };
     }
 
     const { data: session } = await admin
@@ -235,9 +257,9 @@ async function compensateUnseatedPaidSeat(
         booking_id: bookingId,
       },
     });
-    return true;
+    return { ok: true, creditCents };
   } catch (e) {
     console.error('[compensateUnseatedPaidSeat] failed for', bookingId, e);
-    return false;
+    return { ok: false, creditCents };
   }
 }

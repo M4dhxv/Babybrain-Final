@@ -16,6 +16,7 @@ import { welcomeIfSignedUpPaid } from '@/lib/signup-plan';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 import { addonRowIdsFromMetadata, releaseAddonRows, settleAddonRows } from '@/lib/booking-addons';
+import { releaseHold, settleHold } from '@/lib/make-up-credit';
 
 /**
  * Single source of truth for billing state. Signature-verified.
@@ -409,6 +410,8 @@ export async function POST(request: Request) {
       }
       // Add-on rows created for this checkout never got paid (00273): drop them. A paid row is never touched.
       await releaseAddonRows(admin, addonRowIdsFromMetadata(expired.metadata));
+      // Make-up credit held for a pack (00276). Seats and add-on rows hand their own credit back above.
+      await releaseHold(admin, expired.metadata?.credit_hold_id);
       break;
     }
 
@@ -443,6 +446,7 @@ export async function POST(request: Request) {
       if (failed.metadata?.kind === 'booking' || failed.metadata?.kind === 'booking_addon') {
         await releaseAddonRows(admin, addonRowIdsFromMetadata(failed.metadata));
       }
+      await releaseHold(admin, failed.metadata?.credit_hold_id);
       break;
     }
 
@@ -509,7 +513,7 @@ export async function POST(request: Request) {
         // is always confirmed. Anyone this checkout charged but couldn't
         // seat because a concurrent claim won the race gets a make-up token
         // for the vendor (no cash refunds) and stays on the waitlist.
-        const { confirmedIds, tokenIds, failed } = await confirmPaidBookingSeats(admin, {
+        const { confirmedIds, tokenIds, unseatedCreditCents, failed } = await confirmPaidBookingSeats(admin, {
           seatIds,
           groupId,
           bookingId,
@@ -537,13 +541,18 @@ export async function POST(request: Request) {
         if (earnedIds.length > 0) {
           const { data: booked } = await admin
             .from('bookings')
-            .select('amount, provider_id')
+            .select('amount, provider_id, credit_cents')
             .in('id', earnedIds);
           const rows = booked ?? [];
           const providerId = rows[0]?.provider_id ?? null;
-          if (providerId) {
-            const grossCents =
-              rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0) + addons.settledCents;
+          // Money that came in by card only: the part paid with make-up credit was earned when that credit
+          // was first bought (00276), so it is not a new sale.
+          const grossCents =
+            rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100) - Number(r.credit_cents ?? 0), 0) +
+            addons.settledCents -
+            addons.creditCents -
+            unseatedCreditCents;
+          if (providerId && grossCents > 0) {
             await recordSale(admin, {
               providerId,
               source: 'booking',
@@ -568,12 +577,12 @@ export async function POST(request: Request) {
       if (kind === 'booking_addon') {
         const paymentIntent = (session.payment_intent as string) ?? null;
         const addons = await settleAddonRows(admin, addonRowIdsFromMetadata(session.metadata), paymentIntent);
-        if (addons.providerId && addons.settledCents > 0) {
+        if (addons.providerId && addons.settledCents - addons.creditCents > 0) {
           await recordSale(admin, {
             providerId: addons.providerId,
             source: 'booking',
             bookingId: addons.bookingId,
-            grossCents: addons.settledCents,
+            grossCents: addons.settledCents - addons.creditCents,
             paymentIntentId: paymentIntent,
           });
         }
@@ -606,12 +615,16 @@ export async function POST(request: Request) {
         if (!result) {
           return NextResponse.json({ error: 'Package purchase not recorded' }, { status: 500 });
         }
+        // The pack is granted: the make-up credit held for it is spent (00276).
+        await settleHold(admin, session.metadata.credit_hold_id);
         if (!result.alreadyCredited && result.package) {
+          // Card money only: the part paid with make-up credit was earned when that credit was bought.
+          const packCreditCents = Number(session.metadata.credit_cents ?? 0) || 0;
           await recordSale(admin, {
             providerId: result.package.provider_id,
             source: 'package',
             packagePurchaseId: result.purchaseId,
-            grossCents: result.package.price_cents,
+            grossCents: result.package.price_cents - packCreditCents,
             paymentIntentId: (session.payment_intent as string) ?? null,
           });
           // Free-tier parents can't see Packages on /profile — this email

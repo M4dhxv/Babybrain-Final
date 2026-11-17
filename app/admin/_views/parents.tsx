@@ -107,6 +107,7 @@ type ParentDetailT = {
   /** Make-up tokens (absent from an older cached response, so treated as none). */
   makeUpTokens?: {
     id: string; status: 'issued' | 'redeemed' | 'expired'; createdAt: string; expiresAt: string | null; auto: boolean;
+    amountCents?: number; balanceCents?: number;
     vendor: string | null; forChild: string | null;
     from: { activity: string | null; startsAt: string | null } | null;
     usedOn: { activity: string | null; startsAt: string | null } | null;
@@ -328,6 +329,7 @@ function ParentDetail({ id, onClose, onChanged, interestName }: { id: string; on
           {(() => {
             const tokens = d.makeUpTokens ?? [];
             const available = tokens.filter((x) => x.status === 'issued').length;
+            const money = (c: number | undefined) => `$${((c ?? 0) / 100).toFixed(2)}`;
             const where = (w: { activity: string | null; startsAt: string | null } | null) =>
               w ? `${w.activity ?? 'A class'}${w.startsAt ? ` · ${sgDay(w.startsAt)}` : ''}` : null;
             return collapsible('tokens', `Make-up tokens (${tokens.length}${available ? `, ${available} available` : ''})`, tokens.length === 0
@@ -335,7 +337,7 @@ function ParentDetail({ id, onClose, onChanged, interestName }: { id: string; on
               : <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead><tr style={{ color: C.muted, textAlign: 'left' }}>
-                    <th style={th()}>Vendor</th><th style={th()}>From</th><th style={th()}>Status</th><th style={th()}>Issued</th><th style={th()}>Expires</th>
+                    <th style={th()}>Vendor</th><th style={th()}>From</th><th style={th()}>Worth</th><th style={th()}>Status</th><th style={th()}>Issued</th><th style={th()}>Expires</th>
                   </tr></thead>
                   <tbody>
                     {tokens.map((tk) => (
@@ -347,6 +349,10 @@ function ParentDetail({ id, onClose, onChanged, interestName }: { id: string; on
                         <td style={td()}>
                           {where(tk.from) ?? <span style={{ color: C.muted }}>No booking linked</span>}
                           <div style={{ color: C.muted, fontSize: 11 }}>{tk.auto ? 'Automatic, after a cancellation' : 'Issued by the vendor'}</div>
+                        </td>
+                        <td style={{ ...td(), whiteSpace: 'nowrap' }}>
+                          {money(tk.amountCents)}
+                          {tk.amountCents != null && tk.balanceCents !== tk.amountCents && <div style={{ color: C.muted, fontSize: 11 }}>{money(tk.balanceCents)} left</div>}
                         </td>
                         <td style={td()}>
                           <Badge tone={tk.status === 'issued' ? 'blue' : tk.status === 'redeemed' ? 'green' : 'grey'}>{tk.status === 'issued' ? 'available' : tk.status}</Badge>

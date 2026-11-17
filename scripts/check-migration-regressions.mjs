@@ -33,7 +33,10 @@ const GUARDED = {
     { has: "p_terms_only", why: "00257: the Explore terms filter" },
   ],
   redeem_make_up_token: [
-    { has: /v_status\s*<>\s*'waitlisted'/, why: "00197: a booking that only reached the waitlist must not use up the token" },
+    // 00276 turned a token into a money balance: the 00197 rule is now "credit is only spent on a seat that got a
+    // place" (a waitlisted booking is never confirmed here, so nothing is reserved for it).
+    { has: /v_status\s*=\s*'pending'/, why: "00197/00276: a booking that only reached the waitlist must not spend any make-up credit" },
+    { has: "reserve_make_up_credit", why: "00276: the class is paid from the vendor-scoped make-up credit balance" },
     { has: "v_term_slot", why: "00257: redeeming a token on a term class" },
   ],
   notify_booking_confirmed: [

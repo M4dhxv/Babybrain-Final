@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { computeSplit, getTerms } from '@/lib/commercials';
 import { normalisePicks, prepareAddonRows, releaseAddonRows, settleAddonRows } from '@/lib/booking-addons';
+import { creditBalance, newHoldId, reserveCredit } from '@/lib/make-up-credit';
 
 /**
  * Add people to a booking the parent already holds, and pay only for the add-ons (migration 00273).
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
     group_id?: string;
     session_id?: string;
     addons?: unknown;
+    /** Pay with the parent's make-up token balance with this vendor first (00276). */
+    use_credit?: boolean;
   };
 
   const { supabase, user } = await getAuthedContext(request);
@@ -85,6 +88,35 @@ export async function POST(request: Request) {
     return NextResponse.json({ done: true });
   }
 
+  // Make-up credit (00276): the parent's balance with this vendor pays first, the card pays the rest.
+  let creditCents = 0;
+  if (body.use_credit) {
+    const balance = await creditBalance(admin, user.id, activity.provider_id);
+    // Stripe will not take a charge under 50c, so keep that much on the card rather than leave less.
+    let want = Math.min(prepared.totalCents, balance);
+    if (prepared.totalCents - want > 0 && prepared.totalCents - want < 50) want = Math.max(prepared.totalCents - 50, 0);
+    let need = want;
+    const items = prepared.rowIds.map((rowId, i) => {
+      const cents = Math.min(prepared.rowCents[i] ?? 0, need);
+      need -= cents;
+      return { addonRowId: rowId, cents };
+    });
+    const reserved = await reserveCredit(admin, {
+      userId: user.id,
+      providerId: activity.provider_id,
+      holdId: newHoldId(),
+      refKind: 'addon',
+      items,
+    });
+    creditCents = reserved.total;
+  }
+  const cardCents = prepared.totalCents - creditCents;
+  if (creditCents > 0 && cardCents <= 0) {
+    // Credit covers it all: no card. Marking the rows paid also settles their credit.
+    await settleAddonRows(admin, prepared.rowIds, null, user.id);
+    return NextResponse.json({ done: true, credit_only: true });
+  }
+
   const origin = appOrigin(request);
   let connect = {};
   const { data: provider } = await admin
@@ -94,7 +126,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (provider?.stripe_account_id && provider.payouts_enabled) {
     const terms = await getTerms(admin, activity.provider_id);
-    const split = computeSplit(prepared.totalCents, terms);
+    const split = computeSplit(cardCents, terms);
     connect = {
       payment_intent_data: {
         application_fee_amount: split.applicationFeeCents,
@@ -108,7 +140,21 @@ export async function POST(request: Request) {
       mode: 'payment',
       expires_at: Math.floor(Date.now() / 1000) + 40 * 60,
       payment_method_types: ONE_OFF_PAYMENT_METHODS,
-      line_items: prepared.lineItems,
+      line_items:
+        creditCents > 0
+          ? [
+              {
+                price_data: {
+                  currency: 'sgd' as const,
+                  unit_amount: cardCents,
+                  product_data: {
+                    name: `${activity.title} — extra people (after $${(creditCents / 100).toFixed(2)} make-up token)`,
+                  },
+                },
+                quantity: 1,
+              },
+            ]
+          : prepared.lineItems,
       metadata: {
         kind: 'booking_addon',
         booking_id: lead.id,

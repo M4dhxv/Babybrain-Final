@@ -19,7 +19,7 @@ import { DatePicker } from '@/components/ui/date-picker';
  * sitting flush. Same fix as the activities table.
  */
 const TOKEN_COLS =
-  'grid min-w-[790px] gap-x-4 grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]';
+  'grid min-w-[900px] gap-x-4 grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]';
 
 type Token = {
   token_id: string;
@@ -32,8 +32,14 @@ type Token = {
   expires_at: string | null;
   /** 00255: issued automatically when a booking was cancelled, not by the vendor. */
   auto_issued?: boolean;
+  /** 00276: a token is money. What it was issued for and what is left, in cents. */
+  amount_cents: number;
+  balance_cents: number;
 };
 
+const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+
+// 'Redeemed' = fully spent (nothing left of it).
 const statusFilters = ['All', 'Issued', 'Redeemed', 'Expired'] as const;
 
 const fmtDate = (iso: string) =>
@@ -82,9 +88,16 @@ export default function MakeUpTokensPage() {
     [tokens, filter]
   );
 
-  const counts = useMemo(() => {
-    const c = { issued: 0, redeemed: 0, expired: 0 };
-    tokens.forEach((t) => { c[effectiveStatus(t) as keyof typeof c]++; });
+  // Money, not counts (00276): what families can still spend with you, what they have spent, and what
+  // lapsed unspent.
+  const totals = useMemo(() => {
+    const c = { outstanding: 0, outstandingTokens: 0, spent: 0, lapsed: 0 };
+    tokens.forEach((t) => {
+      const st = effectiveStatus(t);
+      c.spent += Math.max(t.amount_cents - t.balance_cents, 0);
+      if (st === 'issued') { c.outstanding += t.balance_cents; c.outstandingTokens++; }
+      else if (st === 'expired') c.lapsed += t.balance_cents;
+    });
     return c;
   }, [tokens]);
 
@@ -149,28 +162,28 @@ export default function MakeUpTokensPage() {
       <div className="flex items-center justify-between px-4 py-5 sm:px-8">
         <div className="w-full text-center sm:w-auto sm:text-left">
           <h1 className="text-2xl font-bold text-gray-900">Make-up tokens</h1>
-          <p className="text-sm text-gray-500 mt-1">Every make-up token issued to your families, and where it stands. Tokens marked Automatic were given when a booking was cancelled.</p>
+          <p className="text-sm text-gray-500 mt-1">Make-up tokens are money a family has with you. They can spend it on anything you offer (a session, a pack, extra people) and pay any difference by card. Tokens marked Automatic were given when a booking was cancelled.</p>
         </div>
       </div>
 
       <div className="px-4 pb-8 sm:px-8">
         <div className="mb-6 grid grid-cols-3 gap-3 sm:gap-4">
           <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <div className="text-2xl font-bold text-gray-900">{counts.issued}</div>
-            <div className="text-sm text-gray-500">Outstanding</div>
+            <div className="text-2xl font-bold text-gray-900">{dollars(totals.outstanding)}</div>
+            <div className="text-sm text-gray-500">Outstanding ({totals.outstandingTokens} token{totals.outstandingTokens === 1 ? '' : 's'})</div>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <div className="text-2xl font-bold text-gray-900">{counts.redeemed}</div>
-            <div className="text-sm text-gray-500">Redeemed</div>
+            <div className="text-2xl font-bold text-gray-900">{dollars(totals.spent)}</div>
+            <div className="text-sm text-gray-500">Spent with you</div>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <div className="text-2xl font-bold text-gray-900">{counts.expired}</div>
-            <div className="text-sm text-gray-500">Expired</div>
+            <div className="text-2xl font-bold text-gray-900">{dollars(totals.lapsed)}</div>
+            <div className="text-sm text-gray-500">Expired unspent</div>
           </div>
         </div>
 
         <p className="mb-4 text-xs text-gray-500">
-          Issue a new token from <button onClick={() => navigate('/bookings')} className="font-medium text-[#FA4D8D] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token".
+          Issue a new token from <button onClick={() => navigate('/bookings')} className="font-medium text-[#FA4D8D] hover:underline">Bookings</button> — select a child's booking → "Issue make-up token". The token is worth what that booking cost.
         </p>
 
         <div className="mb-4 flex w-full rounded-xl border border-gray-200 bg-white p-1 sm:inline-flex sm:w-auto">
@@ -188,12 +201,12 @@ export default function MakeUpTokensPage() {
           ))}
         </div>
 
-        {loading && <TableRowsSkeleton cols={5} count={6} />}
+        {loading && <TableRowsSkeleton cols={6} count={6} />}
 
         {!loading && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <div className={cn(TOKEN_COLS, 'px-5 py-3 bg-gray-50 text-xs font-medium text-gray-500')}>
-              <div>Family</div><div>Original session</div><div>Status</div><div>Issued</div><div>Expires</div>
+              <div>Family</div><div>Original session</div><div>Worth</div><div>Status</div><div>Issued</div><div>Expires</div>
             </div>
             {visible.map((t) => {
               // An automatic token is the family's replacement for a cancelled booking and is promised not to expire.
@@ -212,6 +225,12 @@ export default function MakeUpTokensPage() {
                     <div className="min-w-0 text-sm text-gray-700 break-words">
                       {t.origin_activity_title ?? <span className="text-gray-400">—</span>}
                       {t.origin_session_at && <div className="text-xs text-gray-500">{fmtDate(t.origin_session_at)}</div>}
+                    </div>
+                    <div className="text-sm text-gray-900">
+                      {t.amount_cents <= 0 ? <span className="text-gray-400">—</span> : dollars(t.amount_cents)}
+                      {t.amount_cents > 0 && t.balance_cents !== t.amount_cents && (
+                        <div className="text-xs text-gray-500">{dollars(t.balance_cents)} left</div>
+                      )}
                     </div>
                     <div><span className={statusBadge(effectiveStatus(t))}>{effectiveStatus(t)}</span></div>
                     <div className="text-xs text-gray-500">{fmtDate(t.created_at)}</div>

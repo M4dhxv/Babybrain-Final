@@ -34,6 +34,7 @@ import { AddonPersonFields } from "../components/AddonPersonFields";
 import { CompanionFields } from "../components/CompanionFields";
 import { buildCompanions, companionProblem, type CompanionType } from "../lib/companions";
 import { anyAgeMismatch, missingAge, parseAge, rangeText } from "../lib/addonAges";
+import { creditToApply, dollars, useMakeUpCredit } from "../lib/makeUpCredit";
 
 /** One selectable row in the booking flow's "Choose your package" step. */
 /** A row in booking step 4 — name and price on the left, the action on the
@@ -297,6 +298,10 @@ export default function BookingPage() {
   const [companionAges, setCompanionAges] = useState<string[]>([]);
   // Step 4: "single" | "credit" | "pack:<id>"
   const [payWith, setPayWith] = useState<string>(draft?.payWith ?? "single");
+  // Make-up credit (00276): the parent's make-up tokens with this vendor are a balance that pays first;
+  // the card pays the rest. On by default whenever they have one, and they can untick it.
+  const [spendMakeUp, setSpendMakeUp] = useState(true);
+  const credit = useMakeUpCredit(auth?.user?.id);
   // Weekly repeats when paying with pack credits: "also book the next N weeks at this time" (issues sheet 3 Oct).
   const [repeatWeeks, setRepeatWeeks] = useState(0);
   // The provider's own consents / waivers / disclosures for this class, and
@@ -995,7 +1000,7 @@ export default function BookingPage() {
     // Every booking belongs to a child. An empty list before the profile fetch
     // has answered only means "not loaded yet" — posting then stored the
     // booking with no child. A make-up token carries its own child.
-    if (!bookChildId && !redeemToken) {
+    if (!bookChildId) {
       setErr(dataResolved ? "Add your child's profile before booking." : "Still loading your profile — try again in a moment.");
       return;
     }
@@ -1146,45 +1151,6 @@ export default function BookingPage() {
         setBusy(false);
         return;
       }
-    } else if (redeemToken) {
-      // Redeeming a make-up token: books the session and consumes the token atomically.
-      if (sessionId.startsWith("wix:")) {
-        // Wix-linked slot: no local activity_sessions row for the RPC to book
-        // against, and the slot has to be reserved in Wix first — same split
-        // as the package-credit path (/api/wix/bookings/redeem-package).
-        try {
-          const data = await apiPost<{ status: string }>("/api/wix/bookings/redeem-token", {
-            activityId: activity?.id,
-            wixSlotId: sessionId,
-            tokenId: redeemToken,
-            policiesAccepted: acceptedPolicies,
-            ...(medicalNote.trim() ? { medicalDisclosure: medicalNote.trim() } : {}),
-            ...(infoAnswer ? { infoResponse: infoAnswer } : {}),
-          });
-          status = data.status;
-        } catch (e) {
-          setBusy(false);
-          console.error(e);
-          setErr("Could not redeem this make-up token — please try again.");
-          return;
-        }
-        setBusy(false);
-      } else {
-        const { data, error } = await supabase.rpc("redeem_make_up_token", {
-          p_token_id: redeemToken,
-          p_session_id: sessionId,
-          p_policies: acceptedPolicies,
-          ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
-          ...(infoAnswer ? { p_info: infoAnswer } : {}),
-        });
-        setBusy(false);
-        if (error) {
-          setErr(cleanRpcErrorMessage(error));
-          return;
-        }
-        status = (data as string | null) ?? "confirmed";
-        if (!(await saveCompanionsFor({}))) companionsFailed = true;
-      }
     } else if (sessionId.startsWith("wix:")) {
       // Wix-linked activity: the slot lives in Wix, not activity_sessions —
       // creating the booking there (and materializing the local session) is
@@ -1198,6 +1164,8 @@ export default function BookingPage() {
         childId: bookChildId,
         policiesAccepted: acceptedPolicies,
         count,
+        // Make-up credit pays first; the card pays whatever it does not cover (00276).
+        ...(creditApplyCents > 0 ? { useCredit: true } : {}),
         // Names for the extra seats (00084); blank -> "Guest".
         ...(count > 1
           ? { guestNames: Array.from({ length: count - 1 }, (_, i) => (guestNames[i] ?? "").trim()) }
@@ -1293,6 +1261,8 @@ export default function BookingPage() {
             group_id: groupId,
             session_id: sessionId,
             ...(addonPicks.length ? { addons: addonPicks } : {}),
+            // Make-up credit pays first; the card pays whatever it does not cover.
+            ...(creditApplyCents > 0 ? { use_credit: true } : {}),
           });
           if (url) {
             window.location.href = url;
@@ -1369,6 +1339,7 @@ export default function BookingPage() {
       const r = await apiPost<{ url?: string; done?: boolean }>("/api/bookings/addons/checkout", {
         session_id: sessionId,
         addons: addonPicks,
+        ...(spendMakeUp && !monthlyBilled && (credit.byProvider[activity?.provider_id ?? ""]?.cents ?? 0) > 0 ? { use_credit: true } : {}),
       });
       if (r.url) {
         window.location.href = r.url;
@@ -1567,6 +1538,7 @@ export default function BookingPage() {
         ...(companions.length ? { companions } : {}),
         ...(medicalNote.trim() ? { medical_disclosure: medicalNote.trim() } : {}),
         ...(infoAnswer ? { info_response: infoAnswer } : {}),
+        ...(creditApplyCents > 0 ? { use_credit: true } : {}),
       });
       if (url) window.location.href = url;
       else setErr("Could not start checkout — please try again.");
@@ -2019,6 +1991,14 @@ export default function BookingPage() {
   // A trial or single date with no place left: booking it joins the waitlist.
   const termOneOffSpots = termOneOffUnit != null && sessionId ? spotsBySession.get(sessionId) : undefined;
   const termOneOffFull = termOneOffSpots != null && termOneOffSpots <= 0;
+  // Make-up credit with this class's vendor: applies to a single session (native or Wix-linked) and to a
+  // pack purchase. Not to a pack credit, a course, a ticketed event, a term enrolment (it has its own credit),
+  // a term trial / single session (charged by /api/terms/checkout) or a monthly-billed class.
+  const creditApplicable = !isEvent && !isCourse && payWith !== "credit" && !termMode && termOneOffUnit == null && !monthlyBilled;
+  const vendorCredit = creditApplicable && activity?.provider_id ? credit.byProvider[activity.provider_id] ?? null : null;
+  const baseCents = selectedPack ? selectedPack.price_cents : Math.round(((shownTotal ?? 0) + addonTotal) * 100);
+  const creditApplyCents = spendMakeUp && vendorCredit ? creditToApply(baseCents, vendorCredit.cents) : 0;
+  const cardCents = Math.max(baseCents - creditApplyCents, 0);
   const payLabel = !auth
     ? "Log in to book"
     : packageUnchosen
@@ -2039,14 +2019,18 @@ export default function BookingPage() {
           : "Get ticket"
       : monthlyBilled
         ? monthly.enrolment ? "Confirm booking" : "Enrol & book"
-      : redeemToken
-        ? addonTotal > 0 ? `Confirm with make-up token and pay $${addonTotal.toFixed(2)} for extra people` : "Confirm with make-up token"
-        : payWith === "credit"
-          ? addonTotal > 0 ? `Confirm with a package credit and pay $${addonTotal.toFixed(2)} for extra people` : "Confirm with a package credit"
-          : selectedPack
-            ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
-            : shownTotal != null && shownTotal > 0
-              ? `Pay $${(shownTotal + addonTotal).toFixed(2)}`
+      : payWith === "credit"
+        ? addonTotal > 0 ? `Confirm with a package credit and pay ${addonTotal.toFixed(2)} for extra people` : "Confirm with a package credit"
+        : selectedPack
+          ? creditApplyCents > 0 && cardCents === 0
+            ? "Buy pack with make-up token"
+            : `Buy pack — ${(cardCents / 100).toFixed(cardCents % 100 ? 2 : 0)}`
+          : shownTotal != null && shownTotal > 0
+            ? creditApplyCents > 0 && cardCents === 0
+              ? "Confirm with make-up token"
+              : creditApplyCents > 0
+                ? `Pay ${(cardCents / 100).toFixed(2)}`
+                : `Pay ${(shownTotal + addonTotal).toFixed(2)}`
               : addonTotal > 0
                 ? `Confirm booking and pay $${addonTotal.toFixed(2)} for extra people`
                 : "Confirm booking";
@@ -2064,7 +2048,7 @@ export default function BookingPage() {
     ? termTotal
     : packageUnchosen
       ? null
-    : redeemToken || payWith === "credit"
+    : payWith === "credit"
       ? addonTotal
       : selectedPack
         ? selectedPack.price_cents / 100
@@ -2704,7 +2688,7 @@ export default function BookingPage() {
                         books a real seat, so the same slot + terms gating the
                         main CTA already enforces for a single-class booking
                         must apply here too — see checkout()/buyPack(). */}
-                    {!termMode && !redeemToken && !packagesNotOffered && packagesOpen && (!termEligible || (termOffer.packages && bookMode === "package")) && (
+                    {!termMode && !packagesNotOffered && packagesOpen && (!termEligible || (termOffer.packages && bookMode === "package")) && (
                       <section>
                         <h3 className="mb-2 text-xl font-black">Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this session on its own, or use a multi-session pack.</p>
@@ -2821,12 +2805,18 @@ export default function BookingPage() {
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>{monthlyBilled ? "On your monthly invoice" : "Total"}</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>
+              {creditApplyCents > 0 && (
+                <>
+                  <p className="mt-2 flex justify-between text-sm font-bold text-[#3f4b78]"><span>Make-up token ({vendorCredit?.name})</span><span>−{dollars(creditApplyCents)}</span></p>
+                  <p className="mt-2 flex justify-between text-lg font-black"><span>To pay</span><span className="text-baby-pink">{dollars(cardCents)}</span></p>
+                </>
+              )}
             </aside>
           </div>
         </section>
         <section className="mt-5 grid items-center gap-5 rounded-[16px] border border-[#EBE3E5] bg-white p-6 shadow-card md:grid-cols-[1fr_360px]">
           <div>
-            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">{monthlyBilled ? "Added to your monthly invoice" : "Total amount"}</span><strong className="text-3xl">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "—"}</strong></p></div>
+            <div className="flex items-center gap-5"><span className="grid h-16 w-16 place-items-center rounded-full bg-[#FEEBF2] text-baby-cta"><Icon name="lock" className="h-8 w-8" /></span><p><span className="block font-bold">{monthlyBilled ? "Added to your monthly invoice" : "Total amount"}</span><strong className="text-3xl">{displayTotal != null ? `${(creditApplyCents > 0 ? cardCents / 100 : displayTotal).toFixed(2)}` : "—"}</strong></p></div>
             {termMode && termCredit && !termSlotFull && termTotal != null && termTotal > 0 && (
               <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-[10px] bg-[#EDF7FD] px-3.5 py-2.5 text-sm font-bold text-[#34406f]">
                 <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} className="mt-1 h-4 w-4 accent-[#FA4D8D]" />
@@ -2844,8 +2834,19 @@ export default function BookingPage() {
               </div>
             )}
           </div>
-          {redeemToken && (
-            <p className="mb-3 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-[#FFD77A]"><Icon name="gift" className="mr-1 inline h-4 w-4" /> Using a make-up token — this session is on the house.</p>
+          {vendorCredit && baseCents > 0 && (
+            <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-[10px] bg-[#FEF2D7] px-4 py-3 text-sm font-bold text-[#7a5a00]">
+              <input type="checkbox" className="mt-0.5 h-5 w-5 flex-shrink-0 accent-[#FA4D8D]" checked={spendMakeUp} onChange={(e) => setSpendMakeUp(e.target.checked)} />
+              <span>
+                <Icon name="gift" className="mr-1 inline h-4 w-4" />
+                Use my make-up tokens with {vendorCredit.name} — {dollars(vendorCredit.cents)} available
+                {spendMakeUp && creditApplyCents > 0 && (
+                  <span className="mt-0.5 block font-semibold">
+                    {dollars(creditApplyCents)} will be used{cardCents > 0 ? ` and you pay ${dollars(cardCents)} by card.` : ". Nothing to pay by card."}
+                  </span>
+                )}
+              </span>
+            </label>
           )}
           {activity?.bookings_paused ? (
             /* 1.1: the vendor has paused bookings for this activity */

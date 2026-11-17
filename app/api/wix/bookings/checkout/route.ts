@@ -10,6 +10,8 @@ import { sgDateTime } from '@/lib/format';
 import { getProviderWixCredentials } from '@/lib/wix/client';
 import { resolveBookingChild } from '@/lib/wix/booking-child';
 import { checkWixBookingGates, isWixSessionPaused, getWixSessionBookingCutoff, reserveWixSlotForCheckout } from '@/lib/wix/sync';
+import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
+import { creditBalance, newHoldId, reserveCredit } from '@/lib/make-up-credit';
 
 /**
  * Parent pays for a Wix-linked class. Unlike the free path
@@ -43,6 +45,8 @@ export async function POST(request: Request) {
     count?: number;
     // Names for the extra seats of a multi-child booking (00084).
     guestNames?: string[];
+    /** Spend the parent's make-up token balance with this vendor first; the card pays the rest (00276). */
+    useCredit?: boolean;
   };
   const { activityId, wixSlotId } = body;
   const count = Math.min(Math.max(Math.trunc(body.count ?? 1), 1), 6);
@@ -164,19 +168,87 @@ export async function POST(request: Request) {
   const origin = appOrigin(request);
   const title = activity.title ?? 'Session booking';
 
+  // Make-up credit (00276): the parent's balance with this vendor pays first; the card pays the rest.
+  // The seats carry their own credit, so an unpaid checkout that expires cancels them and hands it back.
+  let creditCents = 0;
+  if (body.useCredit) {
+    const balance = await creditBalance(admin, user.id, activity.provider_id);
+    const totalCents = amountCents * count;
+    // Stripe will not take a charge under 50c, so keep that much on the card rather than leave less.
+    let want = Math.min(totalCents, balance);
+    if (totalCents - want > 0 && totalCents - want < 50) want = Math.max(totalCents - 50, 0);
+    let need = want;
+    const items = bookings.map((b) => {
+      const cents = Math.min(amountCents, need);
+      need -= cents;
+      return { bookingId: b.id, cents };
+    });
+    const got = await reserveCredit(admin, {
+      userId: user.id,
+      providerId: activity.provider_id,
+      holdId: newHoldId(),
+      refKind: 'wix_booking',
+      items,
+    });
+    creditCents = got.total;
+  }
+  const cardCents = Math.max(amountCents * count - creditCents, 0);
+  if (creditCents > 0 && cardCents === 0) {
+    // Credit covers it all: create the Wix booking and confirm the seats now, with no card payment.
+    const fake = {
+      id: `credit_${bookings[0].id}`,
+      payment_intent: null,
+      metadata: { kind: 'wix_booking', booking_ids: JSON.stringify(bookings.map((b) => b.id)), activity_id: activity.id, wix_slot_id: wixSlotId },
+    } as unknown as Stripe.Checkout.Session;
+    await finalizeWixBookingCheckout(admin, fake);
+    const { data: after } = await admin.from('bookings').select('status').in('id', bookings.map((b) => b.id));
+    if (!after || after.some((b) => b.status !== 'confirmed')) {
+      return NextResponse.json({ error: 'That slot is no longer available — your make-up token balance has not been used.' }, { status: 409 });
+    }
+    const url =
+      `${origin}/booked?` +
+      new URLSearchParams({
+        title,
+        slug: activity.slug ?? '',
+        status: 'confirmed',
+        credit: '1',
+        when: slot?.starts_at ? sgDateTime(slot.starts_at) : '',
+        start: slot?.starts_at ?? '',
+        end: slot?.ends_at ?? '',
+        venue: [slotVenue?.name, slotVenue?.address].filter(Boolean).join(', ') || activity.address || '',
+        staff: '',
+      }).toString();
+    return NextResponse.json({ url, credit_only: true });
+  }
+
   const params = {
     mode: 'payment' as const,
     payment_method_types: ['paynow', 'card', 'grabpay'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
-    line_items: [
-      {
-        price_data: {
-          currency: 'sgd' as const,
-          unit_amount: amountCents,
-          product_data: { name: count > 1 ? `${title} — session booking (${count} tickets)` : `${title} — session booking` },
-        },
-        quantity: count,
-      },
-    ],
+    line_items:
+      creditCents > 0
+        ? [
+            {
+              price_data: {
+                currency: 'sgd' as const,
+                unit_amount: cardCents,
+                product_data: {
+                  name:
+                    `${title} — session booking${count > 1 ? ` (${count} tickets)` : ''} (after $${(creditCents / 100).toFixed(2)} make-up token)`,
+                },
+              },
+              quantity: 1,
+            },
+          ]
+        : [
+            {
+              price_data: {
+                currency: 'sgd' as const,
+                unit_amount: amountCents,
+                product_data: { name: count > 1 ? `${title} — session booking (${count} tickets)` : `${title} — session booking` },
+              },
+              quantity: count,
+            },
+          ],
     // wix_slot_id + activity_id let the webhook re-create the real Wix
     // booking on payment; booking_ids is the set of pending rows it flips to
     // paid+confirmed. Everything else needed (child, policies, medical note)
@@ -186,6 +258,7 @@ export async function POST(request: Request) {
       booking_ids: JSON.stringify(bookings.map((b) => b.id)),
       activity_id: activity.id,
       wix_slot_id: wixSlotId,
+      ...(creditCents > 0 ? { credit_cents: String(creditCents) } : {}),
     },
     /* Same as the native checkout: the confirmation page only renders its
        date, venue and "Add to calendar" button when it is given them, and
@@ -230,7 +303,8 @@ export async function POST(request: Request) {
     // the same class sold through Wix and through BabyBrain's own scheduler
     // paid two different commissions.
     const terms = await getTerms(admin, activity.provider_id);
-    const split = computeSplit(amountCents * count, terms);
+    // BabyBrain's cut is taken on the card part only; the vendor was paid for the credit part already.
+    const split = computeSplit(cardCents, terms);
     connect = {
       payment_intent_data: {
         application_fee_amount: split.applicationFeeCents,

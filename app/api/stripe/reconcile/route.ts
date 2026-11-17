@@ -10,6 +10,7 @@ import { settleMonthlyInvoice } from '@/lib/monthly-invoice-payment';
 import { finalizeWixBookingCheckout } from '@/lib/wix/finalize-checkout';
 import { finalizeWixEventTicketCheckout } from '@/lib/wix/finalize-event-checkout';
 import { addonRowIdsFromMetadata, settleAddonRows } from '@/lib/booking-addons';
+import { settleHold } from '@/lib/make-up-credit';
 
 /**
  * Apply the effect of a completed Stripe Checkout Session on return from
@@ -93,13 +94,16 @@ export async function POST(request: Request) {
     // function itself — safe to call even if the webhook already ran.
     const result = await purchasePackageAndBook(admin, session);
     if (!result || !result.package) return NextResponse.json({ error: 'Package not found' }, { status: 404 });
+    // The pack is granted: the make-up credit held for it is spent (00276). Idempotent.
+    await settleHold(admin, session.metadata?.credit_hold_id);
     if (result.alreadyCredited) return NextResponse.json({ applied: false, reason: 'already_credited' });
 
     await recordSale(admin, {
       providerId: result.package.provider_id,
       source: 'package',
       packagePurchaseId: result.purchaseId,
-      grossCents: result.package.price_cents,
+      // Card money only; the make-up credit part is not a new sale.
+      grossCents: result.package.price_cents - (Number(session.metadata?.credit_cents ?? 0) || 0),
       paymentIntentId: (session.payment_intent as string) ?? null,
     });
     // Free-tier parents can't see Packages on /profile — this email is
@@ -182,7 +186,7 @@ export async function POST(request: Request) {
     // contested freed seat rather than each independently confirming it.
     // RLS is bypassed by the admin client, so scope reads/writes to this
     // parent's own bookings.
-    const { confirmedIds, tokenIds, failed } = await confirmPaidBookingSeats(admin, {
+    const { confirmedIds, tokenIds, unseatedCreditCents, failed } = await confirmPaidBookingSeats(admin, {
       seatIds,
       groupId,
       bookingId,
@@ -206,14 +210,18 @@ export async function POST(request: Request) {
     if (earnedIds.length > 0) {
       const { data: booked } = await admin
         .from('bookings')
-        .select('amount, provider_id')
+        .select('amount, provider_id, credit_cents')
         .in('id', earnedIds)
         .eq('user_id', user.id);
       const rows = booked ?? [];
       const providerId = rows[0]?.provider_id ?? null;
-      if (providerId) {
-        const grossCents =
-          rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100), 0) + addons.settledCents;
+      // Card money only; the make-up credit part is not a new sale (00276).
+      const grossCents =
+        rows.reduce((sum, r) => sum + Math.round(Number(r.amount ?? 0) * 100) - Number(r.credit_cents ?? 0), 0) +
+        addons.settledCents -
+        addons.creditCents -
+        unseatedCreditCents;
+      if (providerId && grossCents > 0) {
         await recordSale(admin, {
           providerId,
           source: 'booking',
@@ -233,12 +241,12 @@ export async function POST(request: Request) {
     }
     const paymentIntent = (session.payment_intent as string) ?? null;
     const addons = await settleAddonRows(admin, addonRowIdsFromMetadata(session.metadata), paymentIntent, user.id);
-    if (addons.providerId && addons.settledCents > 0) {
+    if (addons.providerId && addons.settledCents - addons.creditCents > 0) {
       await recordSale(admin, {
         providerId: addons.providerId,
         source: 'booking',
         bookingId: addons.bookingId,
-        grossCents: addons.settledCents,
+        grossCents: addons.settledCents - addons.creditCents,
         paymentIntentId: paymentIntent,
       });
     }

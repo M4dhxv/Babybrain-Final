@@ -6,6 +6,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { appOrigin } from '@/lib/cors';
 import { computeSplit, getTerms } from '@/lib/commercials';
 import { companionSettingsFor, packCompanionMetadata, validateCompanions } from '@/lib/companions';
+import { creditBalance, newHoldId, releaseHold, reserveCredit, settleHold } from '@/lib/make-up-credit';
+import { purchasePackageAndBook } from '@/lib/stripe-package-purchase';
+import { notifyPackagePurchased } from '@/lib/notify-package-purchased';
+import type Stripe from 'stripe';
 
 /**
  * Parent buys a class package (multi-session pack). One-off Stripe Checkout;
@@ -35,6 +39,7 @@ export async function POST(request: Request) {
     medical_disclosure: medicalDisclosure,
     info_response: infoResponse,
     companions: rawCompanions,
+    use_credit: useCredit,
   } = (await request.json().catch(() => ({}))) as {
     package_id?: string;
     activity_session_id?: string;
@@ -46,6 +51,8 @@ export async function POST(request: Request) {
     info_response?: string;
     /** Companion mode: [{ seat, name, age }] for the class being booked with the pack (00273). */
     companions?: unknown;
+    /** Pay with the parent's make-up token balance with this vendor first; the card pays the rest (00276). */
+    use_credit?: boolean;
   };
   if (!packageId) {
     return NextResponse.json({ error: 'package_id required' }, { status: 400 });
@@ -194,6 +201,85 @@ export async function POST(request: Request) {
 
   const origin = appOrigin(request);
 
+  // What rides along to the purchase: the same keys whether a card pays or credit does.
+  const metadata: Record<string, string> = {
+    kind: 'package',
+    user_id: user.id,
+    package_id: pkg.id,
+    // The rest only matter alongside a session to book — no point
+    // shipping booking paperwork for a pack bought with no class attached.
+    ...(activitySessionId
+      ? {
+          activity_session_id: activitySessionId,
+          quantity: String(quantity),
+          ...companionMeta,
+          ...(childId ? { child_id: childId } : {}),
+          ...(guestNames && guestNames.length
+            ? { guest_names: JSON.stringify(guestNames.slice(0, 19).map((n) => String(n).slice(0, 80))) }
+            : {}),
+          ...(policiesAccepted && policiesAccepted.length
+            ? { policies_accepted: JSON.stringify(policiesAccepted.slice(0, 50)) }
+            : {}),
+          ...(medicalDisclosure?.trim() ? { medical_disclosure: medicalDisclosure.trim().slice(0, 450) } : {}),
+          // A metadata value holds at most 500 characters, and with a vendor's
+          // second question (00252) both answers travel here under their
+          // questions, so it is split over two keys and rejoined on fulfilment
+          // (lib/stripe-package-purchase.ts) instead of being cut at 450.
+          ...(infoResponse?.trim()
+            ? {
+                info_response: infoResponse.trim().slice(0, 500),
+                ...(infoResponse.trim().length > 500 ? { info_response_2: infoResponse.trim().slice(500, 1000) } : {}),
+              }
+            : {}),
+        }
+      : {}),
+  };
+
+  // Make-up credit (00276): the balance with this vendor pays first, the card pays the rest.
+  let creditCents = 0;
+  let holdId: string | null = null;
+  if (useCredit) {
+    const balance = await creditBalance(admin, user.id, pkg.provider_id);
+    // Stripe will not take a charge under 50c, so keep that much on the card rather than leave less.
+    let want = Math.min(pkg.price_cents, balance);
+    if (pkg.price_cents - want > 0 && pkg.price_cents - want < 50) want = Math.max(pkg.price_cents - 50, 0);
+    if (want > 0) {
+      holdId = newHoldId();
+      const reserved = await reserveCredit(admin, {
+        userId: user.id,
+        providerId: pkg.provider_id,
+        holdId,
+        refKind: 'package',
+        refId: pkg.id,
+        items: [{ cents: want }],
+      });
+      creditCents = reserved.total;
+    }
+  }
+  const cardCents = pkg.price_cents - creditCents;
+
+  // Credit covers the whole pack: no card. Grant it the way the webhook would, against a payment id that
+  // is the hold (purchase_package_and_book dedupes on it, so a double click cannot grant it twice).
+  if (creditCents > 0 && cardCents <= 0 && holdId) {
+    const fake = { id: `credit_${holdId}`, metadata, payment_intent: `credit:${holdId}` } as unknown as Stripe.Checkout.Session;
+    const result = await purchasePackageAndBook(admin, fake);
+    if (!result || !result.package) {
+      await releaseHold(admin, holdId);
+      return NextResponse.json({ error: 'Could not complete the purchase — your balance has not been used. Please try again.' }, { status: 500 });
+    }
+    await settleHold(admin, holdId);
+    if (!result.alreadyCredited) {
+      await notifyPackagePurchased(admin, {
+        userId: user.id,
+        packageId: result.package.id,
+        providerId: result.package.provider_id,
+        purchaseId: result.purchaseId,
+        credits: result.package.credits,
+      });
+    }
+    return NextResponse.json({ url: `${origin}/profile?tab=packages&purchase=success`, credit_only: true });
+  }
+
   // Class packs are vendor revenue, but this checkout never split them: the
   // whole purchase landed on the platform account with nothing transferred to
   // the provider. Split it the same way a booking is split, unless the
@@ -206,9 +292,10 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (provider?.stripe_account_id && provider.payouts_enabled) {
     const terms = await getTerms(admin, pkg.provider_id);
+    // BabyBrain's cut is taken on the card part only: the vendor was paid for the credit part already.
     const split = terms.commissionOnPackages
-      ? computeSplit(pkg.price_cents, terms)
-      : computeSplit(pkg.price_cents, { ...terms, commissionRate: 0, commissionFlatCents: 0 });
+      ? computeSplit(cardCents, terms)
+      : computeSplit(cardCents, { ...terms, commissionRate: 0, commissionFlatCents: 0 });
     connect = {
       payment_intent_data: {
         application_fee_amount: split.applicationFeeCents,
@@ -217,7 +304,10 @@ export async function POST(request: Request) {
     };
   }
 
-  const session = await getStripe().checkout.sessions.create({
+  const creditNote = creditCents > 0 ? ` (after $${(creditCents / 100).toFixed(2)} make-up token)` : '';
+  let session: Stripe.Checkout.Session;
+  try {
+  session = await getStripe().checkout.sessions.create({
     mode: 'payment',
     ...connect,
     payment_method_types: ONE_OFF_PAYMENT_METHODS,
@@ -225,49 +315,25 @@ export async function POST(request: Request) {
       {
         price_data: {
           currency: 'sgd',
-          unit_amount: pkg.price_cents,
-          product_data: { name: `${pkg.name} (${pkg.credits} ${pkg.credits === 1 ? 'session' : 'sessions'})` },
+          unit_amount: cardCents,
+          product_data: { name: `${pkg.name} (${pkg.credits} ${pkg.credits === 1 ? 'session' : 'sessions'})${creditNote}` },
         },
         quantity: 1,
       },
     ],
-    metadata: {
-      kind: 'package',
-      user_id: user.id,
-      package_id: pkg.id,
-      // The rest only matter alongside a session to book — no point
-      // shipping booking paperwork for a pack bought with no class attached.
-      ...(activitySessionId
-        ? {
-            activity_session_id: activitySessionId,
-            quantity: String(quantity),
-            ...companionMeta,
-            ...(childId ? { child_id: childId } : {}),
-            ...(guestNames && guestNames.length
-              ? { guest_names: JSON.stringify(guestNames.slice(0, 19).map((n) => String(n).slice(0, 80))) }
-              : {}),
-            ...(policiesAccepted && policiesAccepted.length
-              ? { policies_accepted: JSON.stringify(policiesAccepted.slice(0, 50)) }
-              : {}),
-            ...(medicalDisclosure?.trim() ? { medical_disclosure: medicalDisclosure.trim().slice(0, 450) } : {}),
-            // A metadata value holds at most 500 characters, and with a vendor's
-            // second question (00252) both answers travel here under their
-            // questions, so it is split over two keys and rejoined on fulfilment
-            // (lib/stripe-package-purchase.ts) instead of being cut at 450.
-            ...(infoResponse?.trim()
-              ? {
-                  info_response: infoResponse.trim().slice(0, 500),
-                  ...(infoResponse.trim().length > 500 ? { info_response_2: infoResponse.trim().slice(500, 1000) } : {}),
-                }
-              : {}),
-          }
-        : {}),
-    },
+    // The hold is settled when the webhook / return page grants the pack, and handed back if this checkout
+    // expires or fails (checkout.session.expired / async_payment_failed), or after 90 minutes regardless.
+    metadata: { ...metadata, ...(holdId ? { credit_hold_id: holdId, credit_cents: String(creditCents) } : {}) },
     // session_id lets the app credit the pack on return even if the Stripe
     // webhook is delayed or misconfigured (see /api/stripe/reconcile).
     success_url: `${origin}/profile?tab=packages&purchase=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/profile?tab=packages&purchase=cancelled`,
   });
+  } catch (e) {
+    // No checkout exists, so the credit reserved for it would never be used or released.
+    await releaseHold(admin, holdId);
+    throw e;
+  }
 
   return NextResponse.json({ url: session.url });
 }

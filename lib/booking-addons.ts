@@ -52,6 +52,8 @@ export type PrepareResult =
       ok: true;
       /** The pending purchase rows just created. */
       rowIds: string[];
+      /** What each row costs in cents, same order as rowIds (for paying part of it with make-up credit). */
+      rowCents: number[];
       /** Stripe line items for the paid ones (free add-ons carry no line). */
       lineItems: StripeLineItem[];
       totalCents: number;
@@ -203,7 +205,13 @@ export async function prepareAddonRows(
 
   const { data: created, error: insertError } = await db.from('booking_addons').insert(inserts).select('id');
   if (insertError || !created) return { ok: false, status: 500, error: 'Could not save the add-ons — please try again.' };
-  return { ok: true, rowIds: (created as Array<{ id: string }>).map((r) => r.id), lineItems, totalCents };
+  return {
+    ok: true,
+    rowIds: (created as Array<{ id: string }>).map((r) => r.id),
+    rowCents: inserts.map((r) => Number(r.unit_price_cents) * Number(r.quantity)),
+    lineItems,
+    totalCents,
+  };
 }
 
 /**
@@ -216,9 +224,9 @@ export async function settleAddonRows(
   rowIds: string[],
   paymentIntent: string | null,
   scopeUserId?: string
-): Promise<{ settledCents: number; providerId: string | null; bookingId: string | null }> {
+): Promise<{ settledCents: number; creditCents: number; providerId: string | null; bookingId: string | null }> {
   const ids = rowIds.filter(Boolean);
-  if (ids.length === 0) return { settledCents: 0, providerId: null, bookingId: null };
+  if (ids.length === 0) return { settledCents: 0, creditCents: 0, providerId: null, bookingId: null };
   const db = loose(admin);
   let q = db
     .from('booking_addons')
@@ -226,10 +234,12 @@ export async function settleAddonRows(
     .in('id', ids)
     .neq('payment_status', 'paid');
   if (scopeUserId) q = q.eq('user_id', scopeUserId);
-  const { data } = await q.select('unit_price_cents, quantity, provider_id, booking_id');
-  const rows = (data ?? []) as Array<{ unit_price_cents: number; quantity: number; provider_id: string; booking_id: string }>;
+  const { data } = await q.select('unit_price_cents, quantity, provider_id, booking_id, credit_cents');
+  const rows = (data ?? []) as Array<{ unit_price_cents: number; quantity: number; provider_id: string; booking_id: string; credit_cents: number | null }>;
   return {
     settledCents: rows.reduce((s, r) => s + r.unit_price_cents * r.quantity, 0),
+    // The part of it that make-up credit paid (00276): no card money, so not new earnings for the vendor.
+    creditCents: rows.reduce((s, r) => s + Number(r.credit_cents ?? 0), 0),
     providerId: rows[0]?.provider_id ?? null,
     bookingId: rows[0]?.booking_id ?? null,
   };

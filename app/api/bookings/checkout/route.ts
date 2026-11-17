@@ -8,7 +8,8 @@ import { sessionPrice } from '@/lib/session-price';
 import { appOrigin } from '@/lib/cors';
 import { sgDateTime } from '@/lib/format';
 import { computeSplit, getTerms } from '@/lib/commercials';
-import { normalisePicks, prepareAddonRows, releaseAddonRows } from '@/lib/booking-addons';
+import { normalisePicks, prepareAddonRows, releaseAddonRows, settleAddonRows } from '@/lib/booking-addons';
+import { confirmCreditSeats, creditBalance, newHoldId, reserveCredit } from '@/lib/make-up-credit';
 
 /**
  * Parent pays for a booking. The price is resolved server-side from the
@@ -25,6 +26,8 @@ export async function POST(request: Request) {
     group_id?: string | null;
     /** Extra people ticked on the booking page (00273): [{ addon_id, quantity, names? }]. */
     addons?: unknown;
+    /** Spend the parent's make-up token balance with this vendor first (00276); the card pays the rest. */
+    use_credit?: boolean;
   };
 
   const { supabase, user } = await getAuthedContext(request);
@@ -124,6 +127,7 @@ export async function POST(request: Request) {
   // they ride on this same checkout and never affect capacity.
   const picks = normalisePicks(body.addons);
   let addonRowIds: string[] = [];
+  let addonRowCents: number[] = [];
   let addonLineItems: Array<{
     price_data: { currency: 'sgd'; unit_amount: number; product_data: { name: string } };
     quantity: number;
@@ -145,6 +149,7 @@ export async function POST(request: Request) {
     });
     if (!prepared.ok) return NextResponse.json({ error: prepared.error }, { status: prepared.status });
     addonRowIds = prepared.rowIds;
+    addonRowCents = prepared.rowCents;
     addonLineItems = prepared.lineItems;
     addonCents = prepared.totalCents;
   }
@@ -197,28 +202,121 @@ export async function POST(request: Request) {
   const title = activity?.title ?? 'Session booking';
   const origin = appOrigin(request);
 
+  // ---- Make-up credit (00276) --------------------------------------------------------------
+  // The parent's make-up tokens with THIS vendor pay first; the card pays what is left. Credit
+  // stays attached to a seat across Stripe attempts (it is returned only when the seat is cancelled
+  // or goes back to the waitlist), so a parent who retries is not charged the credit twice.
+  const providerId = activity?.provider_id ?? null;
+  const totalCents = amountCents + addonCents;
+  let seatCreditCents = 0;
+  let addonCreditCents = 0;
+  if (body.use_credit && providerId) {
+    const { data: held } = await admin.from('bookings').select('id, credit_cents').in('id', seatIds);
+    const existing = new Map(
+      ((held ?? []) as unknown as Array<{ id: string; credit_cents: number | null }>).map((r) => [r.id, Number(r.credit_cents ?? 0)])
+    );
+    const existingTotal = seatIds.reduce((n, id) => n + (existing.get(id) ?? 0), 0);
+    const balance = await creditBalance(admin, user.id, providerId);
+    // Never leave the card a charge below Stripe's 50c minimum: keep that much on the card instead.
+    let wantTotal = Math.min(totalCents, existingTotal + balance);
+    if (totalCents - wantTotal > 0 && totalCents - wantTotal < 50) wantTotal = Math.max(totalCents - 50, existingTotal);
+    let need = Math.max(wantTotal - existingTotal, 0);
+    const items: Array<{ bookingId?: string; addonRowId?: string; cents: number }> = [];
+    for (const id of seatIds) {
+      const room = Math.max(unitCents - (existing.get(id) ?? 0), 0);
+      const cents = Math.min(room, need);
+      need -= cents;
+      items.push({ bookingId: id, cents });
+    }
+    addonRowIds.forEach((rowId, i) => {
+      const cents = Math.min(addonRowCents[i] ?? 0, need);
+      need -= cents;
+      items.push({ addonRowId: rowId, cents });
+    });
+    const reserved = await reserveCredit(admin, { userId: user.id, providerId, holdId: newHoldId(), refKind: 'booking', items });
+    seatCreditCents = existingTotal;
+    reserved.items.forEach((r) => {
+      if (r.addon_row_id) addonCreditCents += r.cents;
+      else seatCreditCents += r.cents;
+    });
+  }
+  const creditCents = seatCreditCents + addonCreditCents;
+  const cardCents = Math.max(totalCents - creditCents, 0);
+
+  // Credit covers everything: no card, no Stripe. Seat the party and mark the add-ons held.
+  if (creditCents > 0 && cardCents === 0) {
+    const seated = await confirmCreditSeats(admin, seatIds);
+    if (seated.failed) {
+      return NextResponse.json({ error: 'Could not confirm the booking — please try again.' }, { status: 503 });
+    }
+    if (seated.confirmedIds.length === 0) {
+      if (addonRowIds.length) await releaseAddonRows(admin, addonRowIds);
+      return NextResponse.json(
+        { error: "That spot has been taken — you're still on the waitlist." },
+        { status: 409 }
+      );
+    }
+    if (addonRowIds.length) await settleAddonRows(admin, addonRowIds, null, user.id);
+    const url =
+      `${origin}/booked?` +
+      new URLSearchParams({
+        title,
+        slug: activity?.slug ?? '',
+        status: 'confirmed',
+        credit: '1',
+        when: sess?.starts_at ? sgDateTime(sess.starts_at) : '',
+        start: sess?.starts_at ?? '',
+        end: sess?.ends_at ?? '',
+        venue: [venueRow?.name, venueRow?.address].filter(Boolean).join(', ') || activity?.address || '',
+        staff: staffLabel(sess?.teacher_name, sess?.studio),
+        ...(stillWaitlisted + seated.unseatedIds.length > 0 ? { wl: String(stillWaitlisted + seated.unseatedIds.length) } : {}),
+      }).toString();
+    return NextResponse.json({ url, credit_only: true });
+  }
+
+  const creditNote = creditCents > 0 ? ` (after $${(creditCents / 100).toFixed(2)} make-up token)` : '';
+  const lineItems =
+    creditCents > 0
+      ? [
+          {
+            price_data: {
+              currency: 'sgd' as const,
+              unit_amount: cardCents,
+              product_data: {
+                name:
+                  `${title} — session booking` +
+                  (seatCount > 1 ? ` (${seatCount} tickets)` : '') +
+                  (addonCents > 0 ? ' and extra people' : '') +
+                  creditNote,
+              },
+            },
+            quantity: 1,
+          },
+        ]
+      : [
+          {
+            price_data: {
+              currency: 'sgd' as const,
+              unit_amount: unitCents,
+              product_data: {
+                name:
+                  seatCount > 1
+                    ? `${title} — session booking (${seatCount} tickets)`
+                    : `${title} — session booking`,
+              },
+            },
+            quantity: seatCount,
+          },
+          ...addonLineItems,
+        ];
+
   const params = {
     mode: 'payment' as const,
     // Close the checkout before the 45-minute clean-up releases an unpaid
     // seat, so nobody can pay for a place that has already gone back.
     expires_at: Math.floor(Date.now() / 1000) + 40 * 60,
     payment_method_types: ONE_OFF_PAYMENT_METHODS,
-    line_items: [
-      {
-        price_data: {
-          currency: 'sgd' as const,
-          unit_amount: unitCents,
-          product_data: {
-            name:
-              seatCount > 1
-                ? `${title} — session booking (${seatCount} tickets)`
-                : `${title} — session booking`,
-          },
-        },
-        quantity: seatCount,
-      },
-      ...addonLineItems,
-    ],
+    line_items: lineItems,
     metadata: {
       kind: 'booking',
       booking_id: booking.id,
@@ -229,6 +327,9 @@ export async function POST(request: Request) {
       seat_ids: seatIds.join(','),
       // Add-on purchase rows to mark paid with this checkout (00273).
       ...(addonRowIds.length ? { addon_row_ids: addonRowIds.join(',') } : {}),
+      // Make-up credit already taken for this booking (00276). The seats and add-on rows carry their own
+      // credit; this is only what the card was NOT charged, for the vendor's earnings ledger.
+      ...(creditCents > 0 ? { credit_cents: String(creditCents) } : {}),
     },
     // session_id lets the app reconcile the payment on return even if the
     // Stripe webhook is delayed or misconfigured (see /api/stripe/reconcile).
@@ -275,7 +376,9 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (provider?.stripe_account_id && provider.payouts_enabled) {
       const terms = await getTerms(admin, activity.provider_id);
-      const split = computeSplit(amountCents + addonCents, terms);
+      // The vendor was paid for the credit part when that credit was first bought, so BabyBrain's cut
+      // is taken on the card part only.
+      const split = computeSplit(cardCents, terms);
       connect = {
         payment_intent_data: {
           application_fee_amount: split.applicationFeeCents,

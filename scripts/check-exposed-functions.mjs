@@ -76,6 +76,9 @@ const ALLOWED = new Set([
   'term_credit_balance', 'vendor_mark_term_refund',
   // 00275: what a group effectively offers (reads a published term's public numbers, like term_quote).
   'term_slot_offer',
+  // 00276: the parent's own make-up credit balances (reads auth.uid() only). Every function that moves the
+  // money is service-role only.
+  'my_make_up_credit',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

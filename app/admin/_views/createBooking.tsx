@@ -13,14 +13,14 @@ type Method = 'credit' | 'token' | 'manual';
 type Parent = { id: string; name: string; email: string; phone: string | null };
 type Cls = { id: string; title: string; vendorId: string; vendorName: string; startsAt: string; capacity: number | null; taken: number };
 type Pack = { id: string; name: string; vendorId: string; vendorName: string; remaining: number; total: number; expiresAt: string | null };
-type Tok = { id: string; vendorId: string; vendorName: string; childId: string | null; childName: string | null; expiresAt: string | null };
+type Tok = { id: string; vendorId: string; vendorName: string; childId: string | null; childName: string | null; expiresAt: string | null; amountCents?: number; balanceCents?: number };
 type Kid = { id: string; name: string };
 type Check = { key: string; label: string; ok: boolean; detail: string };
 type Verdict = { ok: boolean; checks: Check[]; class?: { title: string; vendor: string; vendor_id: string }; funding?: { kind: string; label: string; vendor: string; vendor_id: string; remaining: number; total: number } | null };
 
 const METHODS: { id: Method; label: string; hint: string }[] = [
   { id: 'credit', label: 'Package credit', hint: 'Uses one credit from a pack the customer bought.' },
-  { id: 'token', label: 'Make-up token', hint: 'Uses one of the customer\'s unused make-up tokens.' },
+  { id: 'token', label: 'Make-up token', hint: 'Pays from the customer\'s make-up token balance with the class\'s vendor (the whole price, no card).' },
   { id: 'manual', label: 'Manual booking', hint: 'A phone or walk-in booking: no account, no credit used.' },
 ];
 
@@ -235,7 +235,7 @@ export default function CreateBookingModal({ onClose, onCreated }: { onClose: ()
                 const match = sameVendor(t.vendorId);
                 return (
                   <button key={t.id} type="button" disabled={!match} style={pickBtn(tokenId === t.id, !match)} onClick={() => setTokenId(t.id)}>
-                    <b>Make-up token</b> · {t.vendorName} <span style={{ color: C.muted, fontSize: 12 }}>{t.childName ? `· for ${t.childName} ` : ''}· {exp(t.expiresAt)}</span>
+                    <b>Make-up token</b> · {t.vendorName} <span style={{ color: C.muted, fontSize: 12 }}>{t.balanceCents != null ? `· $${(t.balanceCents / 100).toFixed(2)} left ` : ''}{t.childName ? `· for ${t.childName} ` : ''}· {exp(t.expiresAt)}</span>
                     {!match && <span style={{ marginLeft: 8 }}><Badge tone="pink">Different vendor</Badge></span>}
                   </button>
                 );
