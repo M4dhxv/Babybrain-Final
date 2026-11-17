@@ -91,7 +91,7 @@ export function BookModeChoice({
     <section>
       <h3 className="mb-4 text-xl font-black">How would you like to book?</h3>
       <div className="grid gap-3 sm:grid-cols-2">
-        {/* Only when a group offers the whole term (00276): a term sold as trial, single or packs alone has no such card. */}
+        {/* Only when a group offers the whole term (00275): a term sold as trial, single or packs alone has no such card. */}
         {offer.term !== false && (
         <button type="button" aria-pressed={mode === "term"} onClick={() => onModeChange("term")} className={card("term")}>
           <span className="flex items-center justify-between gap-2">

@@ -671,7 +671,7 @@ export default function ActivityDetailPage() {
       const all = t.slots.flatMap((s) => s.dates).sort();
       return { key: t.id, name: t.name, range: `${sgDay(all[0])} to ${sgDay(all[all.length - 1])}`, ...flexibleOffering(t, money) };
     }
-    // Prices and counts come from the groups that can be enrolled in for the whole term (00276).
+    // Prices and counts come from the groups that can be enrolled in for the whole term (00275).
     const enrolSlots = t.slots.filter((s) => s.offers.term);
     const priced = enrolSlots.length > 0 ? enrolSlots : t.slots;
     const counts = priced.map((s) => s.dates.length);
@@ -858,7 +858,7 @@ export default function ActivityDetailPage() {
               ) : showOfferings && !sessionsLoading ? (
                 <div className="bb-reveal">
                   <UpcomingSchedule terms={offeringTerms} />
-                  {/* An activity can also run one-off sessions beside its terms (00276): they are listed here too. */}
+                  {/* An activity can also run one-off sessions beside its terms (00275): they are listed here too. */}
                   {openSessions.length > 0 && (
                     <div className="mt-4">
                       <h3 className="mb-2 font-black">One-off sessions</h3>

@@ -1,12 +1,12 @@
 /**
- * Behaviour tests for 00276_term_group_offers.sql, run against an in-process
+ * Behaviour tests for 00275_term_group_offers.sql, run against an in-process
  * Postgres (PGlite) — no database, no Docker, nothing touches production.
  *
  *   npm i --no-save @electric-sql/pglite
- *   node supabase/tests/00276_term_group_offers.test.mjs
+ *   node supabase/tests/00275_term_group_offers.test.mjs
  *
  * Same stand-in tables as the 00263 test (read from that file), the term
- * migrations 00256-00269, then 00276. Checks: each group's own offers and
+ * migrations 00256-00269, then 00275. Checks: each group's own offers and
  * prices, the rules they must satisfy, the booking gate per group, the booking
  * policy following onto sessions, and terms switching themselves on.
  */
@@ -52,15 +52,15 @@ await db.exec(`
   alter table public.activities add column if not exists monthly_billing_enabled boolean not null default false;
   alter table public.activities add column if not exists terms_enabled boolean not null default false;
 `);
-await ok('00256 to 00274 and 00276 apply', async () => {
+await ok('00256 to 00274 and 00275 apply', async () => {
   await db.exec(file('00256_term_enrolment.sql'));
   await db.exec(stub257);
   for (const n of ['00259_term_single_waitlist', '00260_term_place_waitlist', '00261_term_waitlist_vendor', '00262_term_waitlist_closing',
-    '00263_term_withdraw_reschedule_leave', '00264_term_slot_groups', '00269_term_waitlist_pairs_and_used_trials', '00274_term_withdrawal_policy', '00276_term_group_offers']) {
+    '00263_term_withdraw_reschedule_leave', '00264_term_slot_groups', '00269_term_waitlist_pairs_and_used_trials', '00274_term_withdrawal_policy', '00275_term_group_offers']) {
     await db.exec(file(`${n}.sql`));
   }
 });
-await ok('00276 is idempotent (second run)', async () => { await db.exec(file('00276_term_group_offers.sql')); });
+await ok('00275 is idempotent (second run)', async () => { await db.exec(file('00275_term_group_offers.sql')); });
 
 const P = (await one(`insert into providers (business_name) values ('Little Fish Swim') returning id`)).id;
 const VENDOR = '11111111-1111-1111-1111-111111111111';

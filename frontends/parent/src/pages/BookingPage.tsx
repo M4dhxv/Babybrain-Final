@@ -373,7 +373,7 @@ export default function BookingPage() {
   const packagesOpen = usePackagesOpen(activity?.id);
   const liveTerm = liveTerms.find((t) => t.id === termId) ?? liveTerms[0] ?? null;
   const termMode = termEligible && bookMode === "term";
-  // Only the groups that offer the whole term can be enrolled in (00276). The quote still needs a group when
+  // Only the groups that offer the whole term can be enrolled in (00275). The quote still needs a group when
   // none does: the page then opens on whichever of trial, single or package is offered.
   const termSlots = (liveTerm?.slots ?? []).filter((s) => s.offers.term);
   const quoteSlots = termSlots.length > 0 ? termSlots : liveTerm?.slots ?? [];
@@ -1658,7 +1658,7 @@ export default function BookingPage() {
   // its dates. Only sessions the page has loaded (with their spots) and that
   // are still to come can be picked.
   const loadedIds = new Set(sessions.map((s) => s.id));
-  // Each mode lists only the groups that offer it (00276).
+  // Each mode lists only the groups that offer it (00275).
   const modeSlots = (liveTerm?.slots ?? []).filter((s) =>
     bookMode === "single" ? s.offers.single : bookMode === "trial" ? s.offers.trial : bookMode === "package" ? s.offers.package : s.offers.term);
   const oneOffGroups = modeSlots.map((s) => {
@@ -1775,7 +1775,7 @@ export default function BookingPage() {
       (bookMode === "single" && (!o.single || (o.trial && o.trialUsed < o.trialLimit))) ||
       (bookMode === "trial" && (!o.trial || o.trialUsed >= o.trialLimit)) ||
       (bookMode === "package" && !o.packages);
-    // Back to the whole term; when no group offers it (00276), to whatever is offered instead.
+    // Back to the whole term; when no group offers it (00275), to whatever is offered instead.
     if (gone) chooseMode(bookMode === "trial" && o.single ? "single" : o.term ? "term" : trialLeft ? "trial" : o.single ? "single" : o.packages ? "package" : "term");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [termEligible, bookMode, termOffer.term, termOffer.trial, termOffer.single, termOffer.packages, termOffer.trialUsed, termOffer.trialLimit, trialState, auth]);
@@ -2008,7 +2008,7 @@ export default function BookingPage() {
   const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
   // A trial or single session of a term is charged at the term's own trial /
   // single price (by /api/terms/checkout), not the activity's.
-  // The price of the group the family picked (00276), not one price for the whole term.
+  // The price of the group the family picked (00275), not one price for the whole term.
   const trialUnit = termEligible && liveTerm && bookMode === "trial" ? oneOffSlot?.trialPrice ?? liveTerm.trialPrice : null;
   const termSingleUnit = termEligible && liveTerm && bookMode === "single" ? oneOffSlot?.singlePrice ?? liveTerm.singlePrice : null;
   // Package mode with no pack or credit picked yet (none exist, or they have not

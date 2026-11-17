@@ -206,7 +206,7 @@ function QuickAdd({ onCreate }: { onCreate: (days: number[], times: string[]) =>
 }
 
 /**
- * What one group (a weekly slot) offers, what it costs, and its booking policy (00276). Each group is
+ * What one group (a weekly slot) offers, what it costs, and its booking policy (00275). Each group is
  * set on its own: parents are only shown what is switched on here, and the database refuses anything a
  * group does not offer. The rules shown are the database's own (slotOffersProblem).
  */
@@ -575,7 +575,7 @@ function TermForm({
   const [mergeAsk, setMergeAsk] = useState(false);
   const flexible = t.slotMode === 'flexible';
   const toggleOpen = (id: string) => setOpenSlots((x) => { const n2 = new Set(x); if (n2.has(id)) n2.delete(id); else n2.add(id); return n2; });
-  // What the term allows is what its groups add up to (00276), so every edit re-derives it.
+  // What the term allows is what its groups add up to (00275), so every edit re-derives it.
   const set = (patch: Partial<Term>) => setT((x) => normalizeTerm({ ...x, ...patch }));
   const setSlot = (id: string, patch: Partial<TermSlot>) =>
     setT((x) => normalizeTerm({ ...x, slots: x.slots.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));

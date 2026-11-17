@@ -624,7 +624,7 @@ export default function ActivitiesPage() {
   // same list as drop-in sessions, tagged "Term", so one can't be mistaken for
   // a single class and removed without knowing who it affects.
   const allTerms = useTerms();
-  // An activity is "term-based" simply by having a term: there is no switch to turn on (00276).
+  // An activity is "term-based" simply by having a term: there is no switch to turn on (00275).
   const activityHasTerms = !!editingId && allTerms.some((t) => t.activityId === editingId);
   // Is this activity billed monthly (00268)? Parents enrol once, book freely, and are invoiced on the 1st.
   const monthlyOn = monthlyPreviewEnabled();
@@ -3936,7 +3936,7 @@ export default function ActivitiesPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* One view for everything this activity runs (00276): its terms and their groups first, each
+            {/* One view for everything this activity runs (00275): its terms and their groups first, each
                 with its own offers, prices and booking policy, then any one-off sessions below. */}
             {termsOn && !scheduleIsWix && (
               <section aria-label="Terms and groups">
