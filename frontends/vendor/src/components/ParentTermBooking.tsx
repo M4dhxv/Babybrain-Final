@@ -617,7 +617,8 @@ export type OfferingTerm = {
   sessions: string;
   /** "Sat, 17 Oct to Wed, 23 Dec". */
   range: string;
-  slots: { label: string; venue?: string | null }[];
+  /** `tags`: what this group offers ("Term", "Single", "Trial", "Packs"), shown under its time. */
+  slots: { label: string; venue?: string | null; tags?: string[] }[];
   /** "$250", or "From $250" when slots are priced differently. */
   price: string;
 };
@@ -644,6 +645,13 @@ export function UpcomingSchedule({ terms }: { terms: OfferingTerm[] }) {
               <li key={i} className="text-sm font-extrabold text-[#34406f]">
                 {s.label}
                 {s.venue && <span className="font-semibold text-[#697390]"> · {s.venue}</span>}
+                {s.tags && s.tags.length > 0 && (
+                  <span className="mt-1 flex flex-wrap gap-1">
+                    {s.tags.map((tag) => (
+                      <span key={tag} className="rounded-full bg-[#F4EFF0] px-2 py-0.5 text-[11px] font-bold text-[#59658d]">{tag}</span>
+                    ))}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

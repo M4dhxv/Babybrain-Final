@@ -671,20 +671,34 @@ export default function ActivityDetailPage() {
       const all = t.slots.flatMap((s) => s.dates).sort();
       return { key: t.id, name: t.name, range: `${sgDay(all[0])} to ${sgDay(all[all.length - 1])}`, ...flexibleOffering(t, money) };
     }
-    const counts = t.slots.map((s) => s.dates.length);
+    // Prices and counts come from the groups that can be enrolled in for the whole term (00276).
+    const enrolSlots = t.slots.filter((s) => s.offers.term);
+    const priced = enrolSlots.length > 0 ? enrolSlots : t.slots;
+    const counts = priced.map((s) => s.dates.length);
     const lo = Math.min(...counts);
     const hi = Math.max(...counts);
     const all = t.slots.flatMap((s) => s.dates).sort();
-    const prices = t.slots.map((s) => s.price);
+    const prices = priced.map((s) => s.price);
     return {
       key: t.id,
       name: t.name,
       sessions: lo === hi ? `${lo} sessions` : `${lo} to ${hi} sessions`,
       range: `${sgDay(all[0])} to ${sgDay(all[all.length - 1])}`,
-      slots: t.slots.map((s) => ({ label: s.label, venue: s.venue })),
+      slots: t.slots.map((s) => ({
+        label: s.label,
+        venue: s.venue,
+        tags: [
+          ...(s.offers.term ? ["Term"] : []),
+          ...(s.offers.single ? ["Single"] : []),
+          ...(s.offers.trial ? ["Trial"] : []),
+          ...(s.offers.package ? ["Packs"] : []),
+        ],
+      })),
       price: Math.min(...prices) === Math.max(...prices) ? money(prices[0]) : `From ${money(Math.min(...prices))}`,
     };
   });
+  // "Enrollment options" lists a term only where some group can be enrolled in for the whole term.
+  const termOptions = offeringTerms.filter((_, i) => liveTerms[i].termOffered);
   const trialTerm = liveTerms.find((t) => t.allowTrial);
   const singleTerm = liveTerms.find((t) => t.allowSingles);
   const offeringOneOffs: OfferingOneOff[] = [
@@ -844,6 +858,13 @@ export default function ActivityDetailPage() {
               ) : showOfferings && !sessionsLoading ? (
                 <div className="bb-reveal">
                   <UpcomingSchedule terms={offeringTerms} />
+                  {/* An activity can also run one-off sessions beside its terms (00276): they are listed here too. */}
+                  {openSessions.length > 0 && (
+                    <div className="mt-4">
+                      <h3 className="mb-2 font-black">One-off sessions</h3>
+                      <SessionSchedule sessions={openSessions} durationMins={durationMins} selectedId={pickedSessionId} onSelect={setPickedSessionId} bookHref={bookHref} preferredSessionAt={preferredSessionAt} />
+                    </div>
+                  )}
                 </div>
               ) : sessionsLoading ? (
                 <div className="animate-pulse space-y-2">
@@ -869,7 +890,7 @@ export default function ActivityDetailPage() {
                 <h2 className="mb-3 text-xl font-black">Enrollment options</h2>
                 <div className="bb-reveal">
                   <EnrolmentOptions
-                    terms={offeringTerms}
+                    terms={termOptions}
                     oneOffs={offeringOneOffs}
                     packs={offeringPacks}
                     selectedPackId={pickedPackId}

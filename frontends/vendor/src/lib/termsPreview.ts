@@ -82,7 +82,54 @@ export type TermSlot = {
    *  (`dayTimes`, keyed by weekday 0-6); otherwise `time`/`duration` apply to all. */
   perDay: boolean;
   dayTimes: Record<string, { time: string; duration: number }>;
+  /* What this group offers, its prices and its booking policy (00276). Each group is set on its own;
+     the term-level flags and prices are derived from the groups when a term is saved. */
+  offerTerm: boolean;
+  offerSingle: boolean;
+  offerTrial: boolean;
+  offerPackage: boolean;
+  /** What one single / trial session of THIS group costs (dollars). Only used while that offer is on. */
+  singlePrice: number;
+  trialPrice: number;
+  /** Booking policy for this group's sessions. `custom` false = the activity's own settings. */
+  policy: SlotPolicy;
 };
+
+/** A group's booking policy (00276), stamped onto its sessions. */
+export type SlotPolicy = {
+  custom: boolean;
+  allowCancellation: boolean;
+  cancellationCutoffHours: number;
+  refundMode: 'refund' | 'none';
+  allowRescheduling: boolean;
+  rescheduleCutoffHours: number;
+  /** Minutes before a session starts that booking closes. */
+  bookingCutoffMinutes: number;
+};
+
+export const DEFAULT_SLOT_POLICY: SlotPolicy = {
+  custom: false,
+  allowCancellation: true,
+  cancellationCutoffHours: 24,
+  refundMode: 'refund',
+  allowRescheduling: true,
+  rescheduleCutoffHours: 24,
+  bookingCutoffMinutes: 15,
+};
+
+/**
+ * The rules a group's offers must satisfy; the same ones the database enforces (00276). Returns what is
+ * wrong, in plain words, or null.
+ */
+export function slotOffersProblem(s: Pick<TermSlot, 'offerTerm' | 'offerSingle' | 'offerTrial' | 'offerPackage'>): string | null {
+  if (!(s.offerTerm || s.offerSingle || s.offerTrial || s.offerPackage)) {
+    return 'A group has to offer at least one way in: the whole term, single sessions, a trial or package credits.';
+  }
+  if (s.offerTrial && !(s.offerTerm || s.offerSingle)) {
+    return 'A trial needs the whole term or single sessions switched on too, so a child is not left with nowhere to go after it.';
+  }
+  return null;
+}
 
 export type Term = {
   id: string;
@@ -132,14 +179,37 @@ export type Term = {
 /** Fill fields that terms saved by earlier versions of the preview lack. */
 export function normalizeTerm(t: Term): Term {
   const groups = t.groups?.length ? t.groups : [{ id: t.slots[0]?.groupId || newId(), name: DEFAULT_GROUP_NAME }];
+  const slots = t.slots.map((s) => ({
+    ...s,
+    groupId: s.groupId && groups.some((g) => g.id === s.groupId) ? s.groupId : groups[0].id,
+    count: s.count ?? null,
+    skip: s.skip ?? [],
+    price: s.price ?? null,
+    singleCap: s.singleCap ?? null,
+    perDay: s.perDay ?? false,
+    dayTimes: s.dayTimes ?? {},
+    // A group saved before 00276 follows its term's old term-wide settings.
+    offerTerm: s.offerTerm ?? true,
+    offerSingle: s.offerSingle ?? t.allowSingles ?? false,
+    offerTrial: s.offerTrial ?? t.allowTrial ?? false,
+    offerPackage: s.offerPackage ?? t.allowPackages ?? true,
+    singlePrice: s.singlePrice ?? t.singlePrice ?? 0,
+    trialPrice: s.trialPrice ?? t.trialPrice ?? 0,
+    policy: { ...DEFAULT_SLOT_POLICY, ...(s.policy ?? {}) },
+  }));
+  // The term-level flags and prices are what the groups add up to (the database keeps them as the outer
+  // bound and the default a group inherits).
+  const priceOf = (list: number[], fallback: number) => (list.length ? Math.min(...list) : fallback);
   return {
     ...t,
+    allowSingles: slots.some((s) => s.offerSingle),
+    singlePrice: priceOf(slots.filter((s) => s.offerSingle).map((s) => s.singlePrice), t.singlePrice ?? 0),
+    allowTrial: slots.some((s) => s.offerTrial),
+    trialPrice: priceOf(slots.filter((s) => s.offerTrial).map((s) => s.trialPrice), t.trialPrice ?? 0),
+    allowPackages: slots.some((s) => s.offerPackage),
     slotMode: t.slotMode ?? 'simple',
     groups,
-    allowTrial: t.allowTrial ?? false,
-    trialPrice: t.trialPrice ?? 0,
     trialLimit: t.trialLimit ?? 1,
-    allowPackages: t.allowPackages ?? true,
     siblingDiscountPct: t.siblingDiscountPct ?? 0,
     previousTermId: t.previousTermId ?? null,
     priorityUntil: t.priorityUntil ?? null,
@@ -147,16 +217,7 @@ export function normalizeTerm(t: Term): Term {
     withdrawAllowed: t.withdrawAllowed ?? false,
     withdrawMode: t.withdrawMode ?? 'none',
     creditDays: t.creditDays ?? 365,
-    slots: t.slots.map((s) => ({
-      ...s,
-      groupId: s.groupId && groups.some((g) => g.id === s.groupId) ? s.groupId : groups[0].id,
-      count: s.count ?? null,
-      skip: s.skip ?? [],
-      price: s.price ?? null,
-      singleCap: s.singleCap ?? null,
-      perDay: s.perDay ?? false,
-      dayTimes: s.dayTimes ?? {},
-    })),
+    slots,
   };
 }
 
@@ -180,6 +241,19 @@ type SlotRow = {
   single_cap: number | null;
   price_cents: number | null;
   pattern: Partial<Pick<TermSlot, 'days' | 'time' | 'duration' | 'start' | 'weeks' | 'count' | 'skip' | 'perDay' | 'dayTimes'>>;
+  /* 00276: what the group offers and its own policy; null = follow the term, then the activity. */
+  offer_term?: boolean | null;
+  offer_single?: boolean | null;
+  offer_trial?: boolean | null;
+  offer_package?: boolean | null;
+  single_price_cents?: number | null;
+  trial_price_cents?: number | null;
+  allow_cancellation?: boolean | null;
+  cancellation_cutoff_hours?: number | null;
+  cancellation_refund_mode?: 'refund' | 'none' | null;
+  allow_rescheduling?: boolean | null;
+  reschedule_cutoff_hours?: number | null;
+  booking_cutoff_minutes?: number | null;
 };
 
 type TermRow = {
@@ -256,6 +330,23 @@ function fromRow(r: TermRow): Term {
         singleCap: s.single_cap,
         perDay: s.pattern.perDay ?? false,
         dayTimes: s.pattern.dayTimes ?? {},
+        // A group with no setting of its own follows its term (normalizeTerm fills these in).
+        offerTerm: s.offer_term ?? true,
+        offerSingle: s.offer_single ?? r.allow_singles,
+        offerTrial: s.offer_trial ?? r.allow_trial,
+        offerPackage: s.offer_package ?? r.allow_packages,
+        singlePrice: toDollars(s.single_price_cents ?? r.single_price_cents),
+        trialPrice: toDollars(s.trial_price_cents ?? r.trial_price_cents),
+        policy: {
+          ...DEFAULT_SLOT_POLICY,
+          custom: [s.allow_cancellation, s.cancellation_cutoff_hours, s.cancellation_refund_mode, s.allow_rescheduling, s.reschedule_cutoff_hours, s.booking_cutoff_minutes].some((v) => v != null),
+          allowCancellation: s.allow_cancellation ?? DEFAULT_SLOT_POLICY.allowCancellation,
+          cancellationCutoffHours: s.cancellation_cutoff_hours ?? DEFAULT_SLOT_POLICY.cancellationCutoffHours,
+          refundMode: s.cancellation_refund_mode ?? DEFAULT_SLOT_POLICY.refundMode,
+          allowRescheduling: s.allow_rescheduling ?? DEFAULT_SLOT_POLICY.allowRescheduling,
+          rescheduleCutoffHours: s.reschedule_cutoff_hours ?? DEFAULT_SLOT_POLICY.rescheduleCutoffHours,
+          bookingCutoffMinutes: s.booking_cutoff_minutes ?? DEFAULT_SLOT_POLICY.bookingCutoffMinutes,
+        },
       })),
   });
 }
@@ -268,12 +359,13 @@ const termFields = (t: Term) => ({
   min_left: Math.max(1, t.minLeft),
   reduce_enabled: t.reduce,
   reduce_by_cents: toCents(t.reduceBy),
-  allow_singles: t.allowSingles,
-  single_price_cents: toCents(t.singlePrice),
-  allow_trial: t.allowTrial,
-  trial_price_cents: toCents(t.trialPrice),
+  // What the term allows is what its groups add up to (00276): the database keeps these as the outer bound.
+  allow_singles: t.slots.some((s) => s.offerSingle),
+  single_price_cents: toCents(Math.min(...t.slots.filter((s) => s.offerSingle).map((s) => s.singlePrice), t.slots.some((s) => s.offerSingle) ? Infinity : t.singlePrice)),
+  allow_trial: t.slots.some((s) => s.offerTrial),
+  trial_price_cents: toCents(Math.min(...t.slots.filter((s) => s.offerTrial).map((s) => s.trialPrice), t.slots.some((s) => s.offerTrial) ? Infinity : t.trialPrice)),
   trial_limit: Math.min(10, Math.max(1, t.trialLimit)),
-  allow_packages: t.allowPackages,
+  allow_packages: t.slots.some((s) => s.offerPackage),
   sibling_discount_pct: Math.min(100, Math.max(0, Math.round(t.siblingDiscountPct || 0))),
   previous_term_id: t.previousTermId,
   // The withdrawal policy (00274) is only sent once the vendor has chosen one, so a term saved
@@ -302,6 +394,20 @@ const slotRow = (termId: string, s: TermSlot, position: number) => ({
     days: s.days, time: s.time, duration: s.duration, start: s.start, weeks: s.weeks,
     count: s.count, skip: s.skip ?? [], perDay: s.perDay, dayTimes: s.dayTimes ?? {},
   },
+  // 00276: what this group offers and what it costs, always written out in full.
+  offer_term: s.offerTerm,
+  offer_single: s.offerSingle,
+  offer_trial: s.offerTrial,
+  offer_package: s.offerPackage,
+  single_price_cents: toCents(s.singlePrice),
+  trial_price_cents: toCents(s.trialPrice),
+  // ...and its booking policy: all null = the activity's own settings.
+  allow_cancellation: s.policy.custom ? s.policy.allowCancellation : null,
+  cancellation_cutoff_hours: s.policy.custom && s.policy.allowCancellation ? Math.max(0, Math.round(s.policy.cancellationCutoffHours)) : null,
+  cancellation_refund_mode: s.policy.custom && s.policy.allowCancellation ? s.policy.refundMode : null,
+  allow_rescheduling: s.policy.custom ? s.policy.allowRescheduling : null,
+  reschedule_cutoff_hours: s.policy.custom && s.policy.allowRescheduling ? Math.max(0, Math.round(s.policy.rescheduleCutoffHours)) : null,
+  booking_cutoff_minutes: s.policy.custom ? Math.max(0, Math.min(20160, Math.round(s.policy.bookingCutoffMinutes))) : null,
 });
 
 const NO_TERMS: Term[] = [];
@@ -631,6 +737,14 @@ export function blankTerm(activityId: string, defaults: { price?: number | null;
         singleCap: null,
         perDay: false,
         dayTimes: {},
+        // A new group offers the whole term and package credits; the vendor switches on the rest.
+        offerTerm: true,
+        offerSingle: false,
+        offerTrial: false,
+        offerPackage: true,
+        singlePrice: defaults.price != null ? Math.round(defaults.price) : 0,
+        trialPrice: defaults.price != null ? Math.round(defaults.price / 2) : 0,
+        policy: { ...DEFAULT_SLOT_POLICY },
       },
     ],
     status: 'draft',
