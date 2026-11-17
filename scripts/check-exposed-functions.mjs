@@ -42,6 +42,14 @@ const ALLOWED = new Set([
   'provider_recent_bookings', 'provider_session_roster', 'provider_set_purchase_expiry',
   'provider_trial_conversion', 'mark_provider_notifications_seen', 'promote_waitlist_entry',
   'respond_to_review', 'vendor_cancel_session',
+  // Term enrolment (00243): each checks the caller itself. term_quote and
+  // term_headline_prices only read a published term's public numbers, so the
+  // logged-out pages may call them.
+  'term_quote', 'term_headline_prices', 'term_trial_remaining', 'activity_packages_closed', 'publish_term', 'enrol_in_term', 'book_term_class', 'skip_term_class',
+  // 00244: withdraw (parent / vendor), the vendor's roster and numbers, opening
+  // re-enrolment — each checks the caller. activities_with_live_terms only
+  // lists activity ids with a published term, for the Explore filter.
+  'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
   // Monthly billing (00268): each checks the caller itself (the parent's own enrolment, or the provider's manager).
   'monthly_enrol', 'monthly_give_notice', 'monthly_withdraw_notice', 'monthly_unbilled', 'monthly_settle_invoice',
   'monthly_provider_enrolments', 'monthly_provider_invoices',
@@ -60,6 +68,17 @@ const ALLOWED = new Set([
   // re-enrolment — each checks the caller. activities_with_live_terms only
   // lists activity ids with a published term, for the Explore filter.
   'withdraw_from_term', 'vendor_withdraw_from_term', 'term_roster', 'term_slot_stats', 'open_reenrolment', 'activities_with_live_terms',
+  // 00259: a parent leaving their own unpaid waitlist place on a term session.
+  'leave_term_waitlist',
+  // 00260: the parent's own term place waitlist; each checks the caller.
+  'join_term_waitlist', 'leave_term_waitlist_entry', 'my_term_waitlist',
+  // 00261: the vendor's term waitlist; each checks the caller is on the provider's team.
+  'term_waitlist_roster', 'term_waitlist_counts', 'vendor_offer_term_place', 'vendor_tell_term_waitlist', 'vendor_remove_from_term_waitlist',
+  // 00263: a parent leaving their own unpaid waitlist place on any class.
+  'leave_waitlist',
+  // 00264: slot groups. The combination quote only reads a published term's public numbers;
+  // the rest check the caller themselves.
+  'term_combo_quote', 'enrol_in_term_combo', 'join_term_combo_waitlist', 'vendor_swap_term_slot',
 ]);
 
 const sql = postgres({ ...parseDbUrl(process.env.SUPABASE_DB_URL), prepare: false, ssl: 'require', max: 1 });

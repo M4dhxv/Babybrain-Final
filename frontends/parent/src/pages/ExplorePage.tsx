@@ -21,6 +21,9 @@ import { goTo, getParam, rememberExploreUrl, peekExploreRestore, clearExploreRes
 import { lazyRoute } from "../lib/lazyRoute";
 import { Chip, REGION_FILTERS } from "./prefChips";
 import { lastCatalogFailure } from "../lib/catalog";
+import { termsPreviewEnabled } from "../lib/termsPreview";
+
+const TERMS_FLAG = termsPreviewEnabled();
 
 /** Trails `value` by `delay`ms of no further change — for gating an
  *  expensive derived computation (a filter/sort recompute here) behind a
@@ -457,6 +460,8 @@ export default function ExplorePage() {
     const s = getParam("sort");
     return s === "popular" || s === "distance" || s === "soonest" || s === "price_asc" || s === "price_desc" ? s : EXPLORE_DEFAULT_SORT;
   });
+  // "Terms" filter (00244): only activities with a term open. Behind the terms flag.
+  const [termsOnly, setTermsOnly] = useState(() => TERMS_FLAG && getParam("terms_only") === "1");
   // Seed every filter from the query string — home-page tiles, header search
   // and category emails only ever set `cat`/`age` (still a single value
   // there), but this is also how a parent's own filter picks survive leaving
@@ -556,6 +561,7 @@ export default function ExplorePage() {
     lat: sort === "distance" ? here?.lat ?? null : null,
     lng: sort === "distance" ? here?.lng ?? null : null,
     regionOrder: sort === "distance" && here && herePickedArea ? regionsByProximity(herePickedArea) : null,
+    ...(termsOnly ? { termsOnly: true } : {}),
   };
   const localFilters = {
     categories: categories_,
@@ -636,6 +642,7 @@ export default function ExplorePage() {
   function resetFilters() {
     setCategories([]); setAges([]); setRegions([]);
     setDateFrom(""); setDateTo(""); setPickingDate(false); setTimeRange([0, 23]); setMaxPrice(PRICE_MAX);
+    setTermsOnly(false);
   }
 
   // Returning from an activity ("Back to results", or the browser's back):
@@ -729,12 +736,13 @@ export default function ExplorePage() {
     if (timeActive) { params.set("timeMin", String(minH)); params.set("timeMax", String(maxH)); }
     if (priceActive) params.set("price", String(maxPrice));
     if (sort !== EXPLORE_DEFAULT_SORT) params.set("sort", sort);
+    if (termsOnly) params.set("terms_only", "1");
     const search = params.toString();
     const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
     window.history.replaceState({}, "", url);
     rememberExploreUrl(search ? `?${search}` : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, categories_, ages, regions, dateFrom, dateTo, minH, maxH, timeActive, maxPrice, priceActive, sort]);
+  }, [query, categories_, ages, regions, dateFrom, dateTo, minH, maxH, timeActive, maxPrice, priceActive, sort, termsOnly]);
 
   useEffect(() => {
     supabase.from("activity_categories").select("slug, name").order("sort_order").then(({ data }) => setCats(data ?? []));
@@ -912,6 +920,19 @@ export default function ExplorePage() {
                       ))}
                     </div>
                   </div>
+                  {TERMS_FLAG && (
+                    <div>
+                      <p className="mb-2 text-xs font-bold text-[#68718f]">Show</p>
+                      <button
+                        type="button"
+                        aria-pressed={termsOnly}
+                        onClick={() => setTermsOnly((v) => !v)}
+                        className={`rounded-full border px-3.5 py-2 text-xs font-bold ${termsOnly ? optionOn : optionOff}`}
+                      >
+                        Terms only
+                      </button>
+                    </div>
+                  )}
                   {sort === "distance" && !here && (
                     <p className="flex flex-wrap items-center gap-2 rounded-[10px] bg-[#FFF5F8] px-3 py-2 text-xs font-semibold text-[#68718f]">
                       <span>Allow location access to sort by how near activities are to you, or</span>
@@ -1072,6 +1093,16 @@ export default function ExplorePage() {
                 <Opt value="price_desc">Price: high to low</Opt>
               </SelectField>
             </label>
+            {TERMS_FLAG && (
+              <button
+                type="button"
+                aria-pressed={termsOnly}
+                onClick={() => setTermsOnly((v) => !v)}
+                className={`h-10 rounded-[10px] border px-4 text-[13px] font-bold ${termsOnly ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#EBE3E5] bg-white text-[#4a5680] hover:border-baby-pink"}`}
+              >
+                {termsOnly ? "✓ Terms only" : "Terms only"}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowMore((v) => !v)}

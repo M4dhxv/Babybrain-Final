@@ -169,6 +169,27 @@ function calendarButton(d: EmailData, ctx: EmailCtx): string {
   return `<p style="margin:0 0 20px"><a href="${esc(href)}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">📅 Add to calendar</a></p>`;
 }
 
+/** Every class of a term in one calendar link: base64url JSON for
+ *  /api/public/calendar?d= (60 events, 8000 characters at most). The venue is
+ *  dropped, then later classes, if the link would be too long. */
+function termCalendarButton(d: EmailData, ctx: EmailCtx): string {
+  const sessions = Array.isArray(d.sessions) ? (d.sessions as { s?: string; e?: string }[]) : [];
+  const title = [str(d, 'activity_name'), str(d, 'term_name')].filter(Boolean).join(' · ');
+  if (!title || sessions.length === 0) return '';
+  const venue = str(d, 'calendar_venue') ?? str(d, 'address');
+  const encode = (list: typeof sessions, withVenue: boolean) =>
+    Buffer.from(JSON.stringify(list.map((x) => ({ t: title, s: x.s, e: x.e, ...(withVenue && venue ? { v: venue } : {}) }))), 'utf8').toString('base64url');
+  let list = sessions.slice(0, 60);
+  let enc = encode(list, true);
+  if (enc.length > 8000) enc = encode(list, false);
+  while (enc.length > 8000 && list.length > 1) {
+    list = list.slice(0, Math.floor(list.length * 0.8));
+    enc = encode(list, false);
+  }
+  const href = `${ctx.appUrl}/api/public/calendar?d=${enc}`;
+  return `<p style="margin:0 0 20px"><a href="${esc(href)}" style="display:inline-block;background:${PINK};color:#ffffff;font-weight:600;font-size:16px;text-decoration:none;padding:14px 28px;border-radius:11px">📅 Add all ${list.length} classes to calendar</a></p>`;
+}
+
 const fallbackLink = (href: string) =>
   `<p style="margin:0 0 16px;font-size:14px;color:#9a9a9a">Or paste this into your browser:<br/><span style="word-break:break-all">${esc(href)}</span></p>`;
 
@@ -303,6 +324,95 @@ const T: Record<string, Template> = {
       p('We hope your family enjoys the activity when it comes!') +
       sign),
 
+  // One email for a whole term enrolment (00244), listing every class, with a
+  // single "add all to calendar" link (the bulk form of /api/public/calendar).
+  term_enrolled: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const child = str(d, 'child_name');
+    const dates = Array.isArray(d.dates) ? (d.dates as unknown[]).map(String) : [];
+    return wrap(ctx, `${child ? `${child} is` : 'You are'} enrolled in ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${child ? bold(child) + ' is' : 'Your child is'} enrolled in ${bold(term)}. Here are the details:`) +
+      details(d, false) +
+      (dates.length
+        ? p(`<strong>All ${dates.length} classes</strong><br/>${dates.map((x) => esc(x)).join('<br/>')}`)
+        : '') +
+      termCalendarButton(d, ctx) +
+      p(`You can see the term, and withdraw if you need to, under ${link(ctx, '/profile?tab=bookings', 'Bookings')}.`) +
+      p('If you have any questions regarding the activity, please reach out to the provider directly. If you do not know how to do that, please reply to this email and we will be happy to help.') +
+      sign);
+  },
+
+  term_reenrol_open: (d, ctx) => {
+    const url = str(d, 'url') ?? '/explore';
+    return wrap(ctx, `Re-enrol for ${str(d, 'term_name') ?? 'the next term'} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`The next term of ${bold(str(d, 'activity_name') ?? 'your class')} is open, and places are held for families already in the class until ${bold(str(d, 'priority_until') ?? 'the end of the week')}.`) +
+      cta(/^https?:\/\//i.test(url) ? url : `${ctx.appUrl}${url}`, 'Re-enrol now') +
+      p('After that, enrolment opens to everyone.') +
+      sign);
+  },
+
+  // Joined a full term group's waitlist (join_term_waitlist, 00260). The
+  // mid-term line states the vendor's own rule: a waitlisted family pays what
+  // any family joining that day pays, so this never promises a lower price.
+  term_waitlist_joined: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const child = str(d, 'child_name');
+    const first = str(d, 'first_session');
+    const reduceBy = Number(d.reduce_by_cents ?? 0);
+    return wrap(ctx, `You're on the waitlist for ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${child ? bold(child) + ' is' : 'You are'} on the waitlist for ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}${first ? `, the group starting ${esc(first)}` : ''}.`) +
+      p('We will email you when a place comes free. Everyone waiting is told at the same time, and the first family to enrol gets the place. Joining the waitlist is free.') +
+      p(reduceBy > 0
+        ? `If a place opens after the term has started, the price is ${bold(`$${(reduceBy / 100).toFixed(reduceBy % 100 ? 2 : 0)}`)} less for each session already run.`
+        : 'The term costs the same whenever you join.') +
+      p(`You can leave the waitlist at any time under ${link(ctx, '/profile?tab=bookings', 'Bookings')}.`) +
+      sign);
+  },
+
+  // A whole place has come free in a term group (offer_term_place, 00260).
+  term_waitlist_place_open: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const url = str(d, 'url') ?? '/profile?tab=bookings';
+    const left = str(d, 'sessions_left');
+    const cents = Number(d.price_cents ?? NaN);
+    const price = Number.isFinite(cents) ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : null;
+    const first = str(d, 'first_session');
+    return wrap(ctx, `A place is free in ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`A place has come free in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}, which you are on the waitlist for.`) +
+      (left || price
+        ? p([left ? `${esc(left)} sessions${first ? ` from ${esc(first)}` : ''}` : null, price ? `${bold(price)} today` : null].filter(Boolean).join(', ') + '.')
+        : '') +
+      cta(`${ctx.appUrl}${url}`, 'Enrol now') +
+      p('Everyone on the waitlist has been told, and the first family to enrol gets the place. Being on the waitlist is free — you haven’t been charged anything.') +
+      sign);
+  },
+
+  // The provider offered this family a place, which may go over capacity
+  // (vendor_offer_term_place, 00261). Personal: nobody else was told.
+  term_waitlist_offer: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const who = str(d, 'provider_name') ?? 'The provider';
+    const child = str(d, 'child_name');
+    const url = str(d, 'url') ?? '/profile?tab=bookings';
+    const left = str(d, 'sessions_left');
+    const cents = Number(d.price_cents ?? NaN);
+    const price = Number.isFinite(cents) ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : null;
+    const first = str(d, 'first_session');
+    return wrap(ctx, `You've been offered a place in ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${bold(who)} has offered ${child ? bold(child) : 'your child'} a place in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}.`) +
+      (left || price
+        ? p([left ? `${esc(left)} sessions${first ? ` from ${esc(first)}` : ''}` : null, price ? bold(price) : null].filter(Boolean).join(', ') + '.')
+        : '') +
+      cta(`${ctx.appUrl}${url}`, 'Enrol now') +
+      p('The place is yours once you enrol and pay.') +
+      sign);
+  },
+
   // ---- Monthly billing (00268). Each is fired by monthly_billing_daily() or a monthly_* function. ----
   // Invoice issued on the 1st for last month's sessions.
   monthly_invoice_issued: (d, ctx) => {
@@ -360,6 +470,57 @@ const T: Record<string, Template> = {
       p(`Thank you for being part of ${bold(str(d, 'activity_name') ?? 'the class')}. Your enrolment has now ended.`) +
       p('Any sessions you attended this month are on your final invoice, issued on the 1st.') +
       sign),
+
+  // The provider took this family off a term waitlist (00261).
+  term_waitlist_removed: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const reason = str(d, 'reason');
+    return wrap(ctx, `You're no longer on the waitlist for ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${bold(str(d, 'provider_name') ?? 'The provider')} has taken ${str(d, 'child_name') ? bold(str(d, 'child_name')!) : 'your child'} off the waitlist for ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}.`) +
+      (reason ? p(`They said: ${esc(reason)}`) : '') +
+      p('You haven’t been charged anything.') +
+      p(`If you are looking for something similar, you can ${link(ctx, '/explore', 'explore other activities here')}.`) +
+      sign);
+  },
+
+  // The term stopped taking new families before a place opened (00262).
+  term_waitlist_closed: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'the term';
+    const singles = d.singles === true;
+    const url = str(d, 'url') ?? '/explore';
+    return wrap(ctx, `${term} has closed to new families 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`No place opened in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''} before it closed to new families, so you are no longer on its waitlist. You haven’t been charged anything.`) +
+      (singles
+        ? cta(`${ctx.appUrl}${url}`, 'Book a single session')
+        : p(`You can ${link(ctx, url, 'see the activity')} for other times, or ${link(ctx, '/explore', 'explore other activities')}.`)) +
+      p('If the provider runs another term, we will let you know when it opens.') +
+      sign);
+  },
+
+  // A trial or single session's booking window closed with the family still
+  // waiting for it (00262).
+  term_session_waitlist_closed: (d, ctx) =>
+    wrap(ctx, 'The waitlist for your session has closed 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p('No place came free on this session before booking closed, so you are no longer on its waitlist:') +
+      details(d, false) +
+      p('You haven’t been charged anything.') +
+      p(`You can ${link(ctx, '/explore', 'explore other activities here')}.`) +
+      sign),
+
+  // The next term opened to everyone; this family was waiting on the one
+  // before (00262, decision 6).
+  term_next_open: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'The next term';
+    const url = str(d, 'url') ?? '/explore';
+    return wrap(ctx, `${term} is open 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`You were on the waitlist for the last term of ${bold(str(d, 'activity_name') ?? 'this class')}. Enrolment for ${bold(term)} is now open to everyone.`) +
+      cta(`${ctx.appUrl}${url}`, 'Enrol now') +
+      sign);
+  },
 
   booking_reminder: (d, ctx) =>
     wrap(ctx, 'You have an upcoming booking 👶🧠',
@@ -827,6 +988,22 @@ const T: Record<string, Template> = {
         : '') +
       p(`If you can take more, would you like to ${link(ctx, capacityUrl, 'increase the capacity for this session')}? Everyone on the waitlist is told straight away that a place is available, and whoever books first gets it.`) +
       p('If you are having any issues extending your capacity, please don’t hesitate to reach out for support.') +
+      sign);
+  },
+
+  // A family joined a full term group's waitlist (00261), one email per
+  // family per group.
+  provider_term_waitlist_joined: (d, ctx) => {
+    const waiting = Number(str(d, 'waiting_count') ?? 0);
+    const who = str(d, 'child_name') ?? 'A family';
+    const term = str(d, 'term_name') ?? 'your term';
+    return wrap(ctx, 'Someone joined your term waitlist 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`${bold(who)} is waiting for a place in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}.`) +
+      (waiting > 0
+        ? p(`There ${waiting === 1 ? 'is' : 'are'} now ${bold(String(waiting))} ${waiting === 1 ? 'child' : 'children'} waiting for this group.`)
+        : '') +
+      p(`If you can take more, raise the group's places on ${link(ctx, str(d, 'url') ?? '/vendor', 'your term')}: everyone waiting is told straight away, and the first family to enrol gets the place. You can also offer one family a place from the term's waitlist, even when the group is full.`) +
       sign);
   },
 

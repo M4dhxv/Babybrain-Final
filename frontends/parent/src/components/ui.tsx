@@ -14,6 +14,8 @@ import { FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { requestInstall, useInstallState } from "../lib/install";
 import { useUnreadMessages } from "../lib/chat";
 import { useUnreadNotifications } from "../lib/notifications";
+import { termsPreviewEnabled } from "../lib/termsPreview";
+import { termHeadlineLabel, useTermHeadline } from "../lib/termHeadlines";
 
 /** Small circular loading indicator for inline spots (a count still being
  *  fetched, a button mid-request) where the bouncing-dot RainbowLoader is too
@@ -1002,6 +1004,18 @@ function priceLabel(activity: Activity): string | null {
 // memoized so a parent re-render (e.g. the sort dropdown, an unrelated
 // favourite toggling elsewhere) doesn't re-render every card whose own props
 // haven't changed.
+/** "Term available" marker, behind the terms flag (lib/termsPreview.ts). Shown
+ *  only when the activity has a published term with sessions still to run —
+ *  the same thing term_headline_prices (00243) reports, which the card already
+ *  reads for its price line. */
+const TERMS_PREVIEW = termsPreviewEnabled();
+function TermAvailableBadge({ hasTerm }: { hasTerm: boolean }) {
+  if (!TERMS_PREVIEW || !hasTerm) return null;
+  return (
+    <span className="rounded-full bg-[#DDF3EE] px-2.5 py-1 text-[11px] font-bold text-[#0F6E56] shadow-soft">Term available</span>
+  );
+}
+
 export const ActivityCard = memo(function ActivityCard({
   activity,
   compact = false,
@@ -1013,6 +1027,9 @@ export const ActivityCard = memo(function ActivityCard({
 }) {
   const href = activityHref(activity);
   const thumb = useThumb(activity.image, 640, 174);
+  // With terms on, the card leads with the trial / single / lowest-term price.
+  const termHeadline = useTermHeadline(activity.id);
+  const priceText = termHeadline ? termHeadlineLabel(termHeadline) : priceLabel(activity);
   return (
     <article className="relative flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE3E5] bg-white shadow-card">
       <div className="relative h-[108px]">
@@ -1036,6 +1053,7 @@ export const ActivityCard = memo(function ActivityCard({
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
+          <TermAvailableBadge hasTerm={termHeadline != null} />
         </div>
         <SaveHeart
           activityId={activity.id}
@@ -1062,8 +1080,8 @@ export const ActivityCard = memo(function ActivityCard({
             <Icon name="calendar" className="h-3.5 w-3.5 text-palette-blue" />{" "}
             {activity.date ? (activity.time ? <>{activity.date} · {activity.time}</> : activity.date) : "Schedule TBC"}
           </p>
-          {priceLabel(activity) && (
-            <p className="font-black text-palette-blue">{priceLabel(activity)}</p>
+          {priceText && (
+            <p className="font-black text-palette-blue">{priceText}</p>
           )}
           {!compact && (activity.rating || formatDuration(activity.durationMins)) && (
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -1125,6 +1143,8 @@ export const ActivityCard = memo(function ActivityCard({
 export const ActivityRow = memo(function ActivityRow({ activity }: { activity: Activity }) {
   const href = activityHref(activity);
   const thumb = useThumb(activity.image, 440, 352);
+  const termHeadline = useTermHeadline(activity.id);
+  const priceText = termHeadline ? termHeadlineLabel(termHeadline) : priceLabel(activity);
   return (
     <a href={href} className="grid h-full grid-cols-1 overflow-hidden rounded-[12px] border border-[#EBE3E5] bg-white shadow-card sm:grid-cols-[170px_1fr] xl:grid-cols-[220px_1fr]">
       {/* On sm+ the image fills this cell absolutely, so its own aspect ratio can never set the row
@@ -1152,6 +1172,7 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
               <Icon name="star" className="h-3 w-3 fill-current" /> Featured
             </span>
           )}
+          <TermAvailableBadge hasTerm={termHeadline != null} />
         </div>
       </div>
       <div className="relative p-4">
@@ -1179,7 +1200,7 @@ export const ActivityRow = memo(function ActivityRow({ activity }: { activity: A
               ? <><Icon name="clock" className="h-3.5 w-3.5 shrink-0 text-palette-blue" /> {formatDuration(activity.durationMins)}</>
               : " "}
           </span>
-          <span className="truncate font-black text-palette-blue">{priceLabel(activity) ?? ""}</span>
+          <span className="truncate font-black text-palette-blue">{priceText ?? ""}</span>
         </div>
         {/* Category tag(s) as one more attribute alongside age/venue/date,
             rather than floating over the image (see ActivityCard above for

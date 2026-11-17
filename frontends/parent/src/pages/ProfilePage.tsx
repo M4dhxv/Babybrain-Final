@@ -44,8 +44,11 @@ import { sessionCacheGet, sessionCacheSet, sessionCacheInvalidate } from "../lib
 import { apiGet, apiPost } from "../lib/api";
 import { CHAT_TYPES_FILTER } from "../lib/notifications";
 import { cleanRpcErrorMessage } from "../lib/errors";
+import { MyTermsList, useMyTerms } from "../components/MyTerms";
 import { MonthlyPanel } from "../components/MonthlyPanel";
 import { useMonthly } from "../lib/monthly";
+import { termsDb } from "../lib/terms";
+import { termsPreviewEnabled } from "../lib/termsPreview";
 import { goTo, getParam, scrollHighlightIntoView } from "../lib/nav";
 import { isMultiDay, sgDateTime, sgDay, sgDayRange } from "../lib/schedule";
 import { SessionSchedule } from "../components/SessionSchedule";
@@ -122,6 +125,8 @@ type CustomerBookingRow = {
   can_claim?: boolean;
   // A free class with a seat open for this waitlisted booking.
   spot_open?: boolean;
+  // A waitlist place on a term session: how it was booked (00259).
+  term_kind?: "single" | "trial" | "package" | "makeup" | "term" | null;
   // Wix Events: the ticket this seat holds (number + the QR target scanned at the door).
   event_ticket?: { orderId: string; ticketNumber: string; checkInUrl: string | null } | null;
   // Wix Events: the order / RSVP behind this seat, and whether the event is online.
@@ -162,6 +167,10 @@ type BookingItem = {
   // The same on a free class: nothing to pay, so "Book now" opens the booking
   // page for this session (the link the "spot available" email carries).
   spotOpen: boolean;
+  // Waiting for one session of a term (00259): how it was booked. "Book now"
+  // pays at the term's price and opens the booking page in that mode, and the
+  // place can always be left, since nothing was paid.
+  termKind: "single" | "trial" | "package" | "makeup" | "term" | null;
   // Wix Events tickets for this booking, one per seat (empty for everything else).
   tickets: { orderId: string; ticketNumber: string; checkInUrl: string | null }[];
   // An ONLINE Wix event: how to fetch the join link (an order for tickets, an RSVP otherwise).
@@ -1608,6 +1617,8 @@ export default function ProfilePage() {
   // Until the first fetch resolves, the Bookings / Past tabs show a skeleton
   // rather than flashing the "you haven't booked anything" empty state.
   const [bookingsLoaded, setBookingsLoaded] = useState(false);
+  // Term enrolments get their own cards; their seats are left out of the session list.
+  const { terms: myTerms, waiting: myTermWaits, groupIds: termGroupIds, reload: reloadTerms } = useMyTerms(session?.user.id, termsPreviewEnabled());
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [tokens, setTokens] = useState<TokenItem[]>([]);
@@ -2076,6 +2087,7 @@ export default function ProfilePage() {
               canClaim: ordered.some((x) => x.can_claim === true),
               claimIds: ordered.filter((x) => x.can_claim === true).map((x) => x.id),
               spotOpen: ordered.some((x) => x.spot_open === true),
+              termKind: ordered.find((x) => x.term_kind)?.term_kind ?? null,
               tickets: ordered.flatMap((x) => (x.event_ticket ? [x.event_ticket] : [])),
               joinOnline: ordered.find((x) => x.event_access?.online)?.event_access ?? null,
               isEvent: act?.wix_service_type === "EVENT",
@@ -2485,9 +2497,10 @@ export default function ProfilePage() {
     const cutoff = b.isCourse && b.endsAt ? b.endsAt : b.startsAt;
     return !!cutoff && new Date(cutoff).getTime() < now;
   };
+  const sessionBookings = termGroupIds.size > 0 ? bookings.filter((b) => !b.groupId || !termGroupIds.has(b.groupId)) : bookings;
   const childFiltered = childFilter
-    ? bookings.filter((b) => b.childId === childFilter)
-    : bookings;
+    ? sessionBookings.filter((b) => b.childId === childFilter)
+    : sessionBookings;
   const upcomingBookings = childFiltered.filter((b) => !isPast(b));
   const pastBookings = childFiltered.filter(isPast);
   // Bookings tab: status filter, then date sort. A booking with no start time
@@ -2932,6 +2945,11 @@ export default function ProfilePage() {
               {bookingsLoaded && planKnown && (
                 <BookingsToolbar items={upcomingBookings} parentName={parentName} isPlus={isPlus} />
               )}
+              <MyTermsList
+                terms={myTerms.filter((t) => !childFilter || t.childId === childFilter)}
+                waiting={myTermWaits.filter((w) => !childFilter || w.child_id === childFilter)}
+                onChanged={() => { void reloadTerms(); loadBookings(); }}
+              />
               {!bookingsLoaded ? (
                 <BookingsSkeleton />
               ) : splitByChild ? (
@@ -3834,11 +3852,11 @@ function PartyPlaces({
                         type="button"
                         onClick={() => onCancelPlace(p.bookingId, p.name)}
                         className={`rounded-[8px] px-2 py-1 text-xs font-bold ${
-                          cancelWhy
+                          cancelWhy && !(!b.isWixLinked && p.status === "waitlisted")
                             ? "cursor-not-allowed border border-[#EBE3E5] bg-[#FAF7F7] text-[#8A93AC]"
                             : "border border-[#FED7E4] text-[#F2739E] hover:bg-[#FFF5F8]"
                         }`}
-                        title={cancelWhy ?? `Cancel ${p.name}'s place`}
+                        title={(!b.isWixLinked && p.status === "waitlisted" ? null : cancelWhy) ?? `Cancel ${p.name}'s place`}
                       >
                         Cancel place
                       </button>
@@ -3914,8 +3932,18 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
   const cutoffPassed = (b: BookingItem, hours: number) =>
     b.startsAt != null && new Date(b.startsAt).getTime() - hours * 36e5 < Date.now();
 
+  // Every place on this card is on a waitlist: leaving costs nothing, so the
+  // vendor's cancellation rules don't apply (leave_waitlist, 00263). Wix-linked
+  // bookings keep their own cancel route.
+  const waitOnly = (b: BookingItem) =>
+    !b.isWixLinked && b.places.every((p) => p.status === "waitlisted");
+  // The same for one place of a party whose other places got in.
+  const waitPlace = (b: BookingItem, bookingId: string) =>
+    !b.isWixLinked && b.places.some((p) => p.bookingId === bookingId && p.status === "waitlisted");
   const cancelBlockReason = (b: BookingItem) =>
-    b.isEvent
+    waitOnly(b)
+      ? null
+      : b.isEvent
       ? "This is a ticketed event — it can't be cancelled once booked. Contact the provider if you need help."
       : b.isCourse
       ? "This is a course — your enrolment covers the whole run, so it can't be cancelled online. Contact the provider if you need help."
@@ -3925,7 +3953,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
         ? `The cancellation window for this session has closed — cancellations close ${hoursLabel(b.cancelCutoffH)} before the session.`
         : null;
   const reschedBlockReason = (b: BookingItem) =>
-    b.isEvent
+    b.termKind
+      ? "Term sessions can't be moved online. Ask the provider if you need a different date."
+      : b.isEvent
       ? "This is a ticketed event — it can't be rescheduled once booked. Contact the provider if you need help."
       : b.isCourse
       ? "This is a course — your enrolment covers every session in the run, so there's no single session to move. Contact the provider if you need help."
@@ -3969,7 +3999,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       const allWaitlisted = b.places.every((p) => p.status === "waitlisted");
       const body =
         b.groupId && allWaitlisted ? { group_id: b.groupId } : { booking_id: b.claimIds[0] };
-      const { url } = await apiPost<{ url?: string }>("/api/bookings/checkout", body);
+      // A trial or single session of a term is priced by its term (00259).
+      const route = b.termKind === "single" || b.termKind === "trial" ? "/api/terms/checkout" : "/api/bookings/checkout";
+      const { url } = await apiPost<{ url?: string }>(route, body);
       if (url) window.location.href = url;
       else setNotice("Couldn't start payment just now — please try again.");
     } catch (e) {
@@ -3995,9 +4027,11 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       }
       return;
     }
-    const { error } = party(b) && b.groupId
-      ? await supabase.rpc("cancel_booking_group", { p_group_id: b.groupId })
-      : await supabase.rpc("cancel_booking", { p_booking_id: b.id });
+    const { error } = waitOnly(b)
+      ? await termsDb.rpc("leave_waitlist", party(b) && b.groupId ? { p_group_id: b.groupId } : { p_booking_id: b.id })
+      : party(b) && b.groupId
+        ? await supabase.rpc("cancel_booking_group", { p_group_id: b.groupId })
+        : await supabase.rpc("cancel_booking", { p_booking_id: b.id });
     setBusyId(null);
     if (error) setNotice(cleanRpcErrorMessage(error));
     else onChanged?.();
@@ -4016,14 +4050,16 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
    *  as the whole-booking cancel; the per-row compensation trigger returns
    *  that seat's own credit / make-up token. */
   function cancelPlace(b: BookingItem, bookingId: string, name: string) {
-    const why = cancelBlockReason(b);
+    const why = waitPlace(b, bookingId) ? null : cancelBlockReason(b);
     if (why) { setNotice(why); return; }
     setCancelAsk({ b, placeId: bookingId, name });
   }
 
   async function doCancelPlace(b: BookingItem, bookingId: string) {
     setBusyId(b.id);
-    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
+    const { error } = waitPlace(b, bookingId)
+      ? await termsDb.rpc("leave_waitlist", { p_booking_id: bookingId })
+      : await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     setBusyId(null);
     if (error) setNotice(cleanRpcErrorMessage(error));
     else onChanged?.();
@@ -4162,7 +4198,7 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
             {b.status === "pending" && !b.canClaim && (
               <div className="mt-2 flex items-start gap-1.5 border-t border-[#FAF7F7] pt-2 text-xs font-semibold text-[#59658d]">
                 <Icon name="bell" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-palette-yellow" />
-                <span>Your previous attempt to book this slot was abandoned before payment went through — book it again to complete the payment and confirm the space.</span>
+                <span>Payment for this place hasn't gone through yet. It's held for 45 minutes from when you started paying; after that it's released and you can book it again.</span>
               </div>
             )}
             {b.canClaim && (
@@ -4186,7 +4222,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
                   A spot has opened up on this session — book it now. The first to book gets it.
                 </p>
                 <a
-                  href={`/book?slug=${encodeURIComponent(b.slug)}&session=${encodeURIComponent(b.sessionId)}`}
+                  href={`/book?slug=${encodeURIComponent(b.slug)}&session=${encodeURIComponent(b.sessionId)}${
+                    b.termKind === "single" || b.termKind === "trial" || b.termKind === "package" ? `&mode=${b.termKind}` : ""
+                  }`}
                   className="w-full rounded-[9px] bg-baby-cta px-4 py-2.5 text-center text-sm font-bold text-white hover:opacity-90 sm:w-auto sm:py-1.5 sm:text-xs"
                 >
                   Book now
@@ -4298,6 +4336,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
         const { b, placeId, name } = cancelAsk;
         const working = busyId === b.id;
         const whole = !placeId && party(b);
+        // Leaving a waitlist place: nothing was paid, so no refund talk.
+        const leaving = placeId ? waitPlace(b, placeId) : waitOnly(b);
         const close = () => !working && setCancelAsk(null);
         const confirm = async () => {
           if (placeId) await doCancelPlace(b, placeId);
@@ -4315,7 +4355,9 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
             >
               <div className="px-5 pt-5 sm:px-6 sm:pt-6">
                 <h3 id="cancel-title" className="text-lg font-black">
-                  {placeId ? `Cancel ${name}'s place?` : whole ? `Cancel all ${b.places.length} places?` : "Cancel your booking?"}
+                  {leaving
+                    ? placeId ? `Take ${name} off the waitlist?` : "Leave the waitlist?"
+                    : placeId ? `Cancel ${name}'s place?` : whole ? `Cancel all ${b.places.length} places?` : "Cancel your booking?"}
                 </h3>
                 <p className="mt-1 text-sm font-semibold text-[#59658d]">
                   {b.title}{b.when ? <> · {b.when}</> : null}
@@ -4323,20 +4365,26 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
               </div>
               <div className="px-5 py-4 sm:px-6">
                 <p className="rounded-[10px] bg-[#FFF5F8] px-3 py-2.5 text-sm font-semibold text-[#3f4b78]">
-                  {placeId
-                    ? "The rest of the booking stays as it is. "
-                    : whole
-                    ? "Every place on this booking will be cancelled. "
-                    : null}
-                  Whether you get a refund or a make-up token depends on the provider&rsquo;s cancellation policy.
+                  {leaving ? (
+                    "Nothing was paid for a waitlist place, so there's nothing to refund."
+                  ) : (
+                    <>
+                      {placeId
+                        ? "The rest of the booking stays as it is. "
+                        : whole
+                        ? "Every place on this booking will be cancelled. "
+                        : null}
+                      Whether you get a refund or a make-up token depends on the provider&rsquo;s cancellation policy.
+                    </>
+                  )}
                 </p>
               </div>
               <div className="space-y-2 border-t border-[#EBE3E5] px-5 py-4 sm:px-6">
                 <Button type="button" className="w-full" disabled={working} onClick={() => void confirm()}>
-                  {working ? "Cancelling…" : placeId ? `Cancel ${name}'s place` : whole ? `Cancel all ${b.places.length} places` : "Cancel booking"}
+                  {working ? "Cancelling…" : leaving ? "Leave the waitlist" : placeId ? `Cancel ${name}'s place` : whole ? `Cancel all ${b.places.length} places` : "Cancel booking"}
                 </Button>
                 <Button type="button" variant="outline" className="w-full" disabled={working} onClick={close}>
-                  Keep my booking
+                  {leaving ? "Stay on it" : "Keep my booking"}
                 </Button>
               </div>
             </div>

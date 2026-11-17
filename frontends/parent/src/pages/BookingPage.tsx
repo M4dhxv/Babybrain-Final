@@ -23,6 +23,10 @@ import { cleanRpcErrorMessage } from "../lib/errors";
 import { goTo, getParam, routePath, rememberLoginNext, clearLoginNext } from "../lib/nav";
 import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } from "../lib/schedule";
 import { enrolMonthly, useActivityMonthly, MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, lastPayDay } from "../lib/monthly";
+import { BookModeChoice, TermComboPicker, TermEnrolPreview, TermPicker, TermSessionPicker, type BookMode, type TermOffer } from "../components/TermBookingPreview";
+import { termsPreviewEnabled } from "../lib/termsPreview";
+import { flexibleOffering, liveComboQuote, liveQuote, liveSlotsClash, termsDb, useActivityTerms, useTrialRemaining, type LiveSlot } from "../lib/terms";
+import { usePackagesOpen } from "../lib/termHeadlines";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
 import type { ActivitySession, ProviderPolicy } from "../lib/database.types";
@@ -195,9 +199,20 @@ export default function BookingPage() {
   // Earliest first, whatever order the sessions arrive in (Wix slots and the
   // vendor's own slots come from different sources): the date list, the times
   // within a date, and the pre-selected default all follow this.
-  const sessions = useMemo(
+  const allSessions = useMemo(
     () => [...fetchedSessions].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at)),
     [fetchedSessions]
+  );
+  // Published terms (00243). A term's classes are real sessions, but they are
+  // booked through the term (enrol, trial, single, package), never through the
+  // ordinary date picker — so without a term to book they are left out.
+  const spotsBySession = useMemo(() => new Map(allSessions.map((s) => [s.id, s.capacity])), [allSessions]);
+  const termsFlag = termsPreviewEnabled() && !!activity && !activity.wix_service_type;
+  const { terms: liveTerms, termSessionIds } = useActivityTerms(activity?.id ?? null, termsFlag, spotsBySession);
+  const termEligible = termsFlag && !getParam("token") && liveTerms.length > 0;
+  const sessions = useMemo(
+    () => (termEligible ? allSessions : allSessions.filter((s) => !termSessionIds.has(s.id))),
+    [termEligible, allSessions, termSessionIds]
   );
   // Same guaranteed-something-renders fallback as ActivityCard/ActivityRow —
   // two independent requests (different Wix thumbnail sizes), so each gets
@@ -325,6 +340,67 @@ export default function BookingPage() {
   const monthlyBilled = monthlyOffered && (!!monthly.enrolment || monthlyChoice === "monthly");
   const [monthlyAgree, setMonthlyAgree] = useState(false);
   const packagesNotOffered = isEvent || isCourse || isAppointment || monthlyBilled;
+  // Term enrolment (00243): only for plain (non-Wix) classes with a published
+  // term, and only when the preview flag is on. A term activity opens on the
+  // whole term; trial / single / package are offered as the term allows. A
+  // waitlist "book now" link says which one it was (&mode=, 00259).
+  const [bookMode, setBookMode] = useState<BookMode>(() => {
+    const m = getParam("mode");
+    return m === "single" || m === "trial" || m === "package" ? m : "term";
+  });
+  const [termId, setTermId] = useState<string | null>(null);
+  // Brothers and sisters enrolled in the same checkout as the chosen child.
+  const [siblingIds, setSiblingIds] = useState<string[]>([]);
+  const [termSlotIdx, setTermSlotIdx] = useState(0);
+  // A Flexible term (00264): the slot picked in each group, by group id.
+  const [termPicks, setTermPicks] = useState<Record<string, string>>({});
+  // Packs are not offered where no running term accepts package credits.
+  const packagesOpen = usePackagesOpen(activity?.id);
+  const liveTerm = liveTerms.find((t) => t.id === termId) ?? liveTerms[0] ?? null;
+  const termMode = termEligible && bookMode === "term";
+  const termSlots = liveTerm?.slots ?? [];
+  const simpleSlot = termSlots[Math.min(termSlotIdx, termSlots.length - 1)] ?? null;
+  // Flexible: one slot from each group, the same pair every week (00264). Until
+  // every group has a pick the quote shows each group's first slot.
+  const flexTerm = !!liveTerm && liveTerm.slotMode === "flexible";
+  const flexSlots = flexTerm ? liveTerm!.groups.map((g) => liveTerm!.slots.find((s) => s.id === termPicks[g.id]) ?? null) : [];
+  const flexReady = flexTerm && flexSlots.length > 0 && flexSlots.every(Boolean);
+  const flexShown = flexTerm
+    ? liveTerm!.groups.map((g, i) => flexSlots[i] ?? liveTerm!.slots.find((s) => s.groupId === g.id)).filter((s): s is LiveSlot => !!s)
+    : [];
+  // Slots found full when enrolling, since the page loaded (00260).
+  const [filledSlots, setFilledSlots] = useState<Set<string>>(new Set());
+  // No term place left in the chosen slot (or any slot of the pair): the button
+  // joins the waitlist. Not for a family the provider offered these places to
+  // (&offered=1, 00261): their enrolment may go over capacity, and the server
+  // checks the offer.
+  const offeredFlag = getParam("offered") === "1";
+  const offeredSlot = offeredFlag ? getParam("term_slot") : null;
+  const termSlotFull = termMode && (flexTerm
+    ? flexReady && !offeredFlag && flexSlots.some((s) => s!.spotsLeft === 0 || filledSlots.has(s!.id))
+    : !!simpleSlot && simpleSlot.id !== offeredSlot && (simpleSlot.spotsLeft === 0 || filledSlots.has(simpleSlot.id)));
+  // The term as it would be quoted to this parent today (the slot or pair they
+  // picked, minus the classes that have already run). The server charges
+  // term_quote() / term_combo_quote().
+  const cutoffMins = activity?.booking_cutoff_minutes ?? null;
+  const quote = termEligible && liveTerm
+    ? flexTerm
+      ? (flexShown.length ? liveComboQuote(liveTerm, flexShown, cutoffMins) : null)
+      : simpleSlot ? liveQuote(liveTerm, simpleSlot, cutoffMins) : null
+    : null;
+  // For a pair, the quote's slot stands in for both.
+  const termSlot = flexTerm ? (quote?.slot ?? null) : simpleSlot;
+  const termUnitPrice = liveTerm?.allowSingles ? liveTerm.singlePrice : null;
+  // What the vendor switched on for this term, and how many trials this child
+  // has already used with the vendor (term_trial_remaining).
+  const trialState = useTrialRemaining(activity?.id ?? null, childId ?? kids[0]?.id ?? null, termEligible && !!liveTerm?.allowTrial, !!auth);
+  const termOffer: TermOffer = {
+    trial: !!liveTerm?.allowTrial,
+    single: !!liveTerm?.allowSingles,
+    packages: !!liveTerm?.allowPackages,
+    trialLimit: liveTerm?.trialLimit ?? 1,
+    trialUsed: trialState?.used ?? 0,
+  };
   // Non-cancellable once booked: always for Wix ticketed events and courses
   // (reserved inside Wix), and for any other activity where the provider has
   // turned the cancellation toggle off on the edit-activity card. Drives the
@@ -719,6 +795,18 @@ export default function BookingPage() {
     !!activity &&
     childAgeMonths != null &&
     (childAgeMonths < activity.age_min_months || childAgeMonths > activity.age_max_months);
+  // Siblings added to a term enrolment: only children inside the age range can be ticked.
+  const siblingFits = (dob: string) => {
+    if (!activity) return false;
+    const m = ageInMonths(dob);
+    return m >= activity.age_min_months && m <= activity.age_max_months;
+  };
+  const termSiblings = termMode ? kids.filter((k) => k.id !== bookChildId && siblingIds.includes(k.id) && siblingFits(k.date_of_birth)) : [];
+  // What each sibling pays: the term price less the vendor's sibling discount
+  // (the same rounding as enrol_in_term).
+  const siblingPrice =
+    quote && liveTerm ? Math.round((quote.payNow * 100 * (100 - liveTerm.siblingDiscountPct)) / 100) / 100 : null;
+  const termTotal = quote ? quote.payNow + (siblingPrice ?? 0) * termSiblings.length : null;
   const selectedTicketType = isEvent ? ticketTypes.find((t) => t.id === ticketTypeId) ?? null : null;
   // Inclusive of Wix's own service fee where it applies (fee_rate_percent is
   // discovered once per ticket type by lib/wix/events-sync.ts and cached —
@@ -1345,6 +1433,15 @@ export default function BookingPage() {
     }
   }
 
+  // In package mode, settle on a credit or the first pack as soon as one exists
+  // (packs load after the page does), so the total and the Pay button are never
+  // left showing the single-session price.
+  useEffect(() => {
+    if (!termEligible || bookMode !== "package" || payWith !== "single") return;
+    const next = packageCredit ? "credit" : packs[0] ? `pack:${packs[0].id}` : null;
+    if (next) setPayWith(next);
+  }, [termEligible, bookMode, payWith, packageCredit, packs]);
+
   const requiredPolicies = policies.filter((p) => p.required);
   const missingPolicies = requiredPolicies.filter((p) => !acceptedPolicies.includes(p.id));
   const needsMedical = Boolean(activity?.requires_medical_disclosure);
@@ -1386,7 +1483,9 @@ export default function BookingPage() {
   // Greys the Pay button out as a hint that something's still missing —
   // it stays tappable in that state (see the button below) so a tap
   // explains exactly what, rather than silently doing nothing.
-  const bookingIncomplete = !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null;
+  const bookingIncomplete = termMode
+    ? consentProblem() != null || (flexTerm && !flexReady)
+    : !sessionId || (isMultiDay && daysPicked.length === 0) || consentProblem() != null;
 
   /** Status of this child's existing booking on the chosen session, if any. */
   const existingBookingStatus = sessionId ? existingBookings.get(`${sessionId}:${bookChildId ?? ""}`) : undefined;
@@ -1396,11 +1495,310 @@ export default function BookingPage() {
    *  duplicate, just an abandoned checkout attempt. */
   const alreadyBookedPending = existingBookingStatus === "pending";
 
+  /** Picking how to book (term / trial / single / package). A package booking
+   *  is a single-class flow that can only be paid with credits or a pack. */
+  function chooseMode(m: BookMode) {
+    if (m === "package") {
+      setPayWith(packageCredit ? "credit" : packs[0] ? `pack:${packs[0].id}` : "single");
+    } else if (bookMode === "package") {
+      setPayWith("single");
+    }
+    setBookMode(m);
+  }
+
+  // Trial, single or package on a term: one of the term's groups, then one of
+  // its dates. Only sessions the page has loaded (with their spots) and that
+  // are still to come can be picked.
+  const loadedIds = new Set(sessions.map((s) => s.id));
+  const oneOffGroups = termSlots.map((s) => {
+    const open = s.dates
+      .map((d, i) => ({ d, id: s.sessionIds[i] }))
+      .filter((x) => loadedIds.has(x.id) && Date.parse(x.d) > Date.now());
+    return {
+      key: s.key,
+      label: s.label,
+      venue: s.venue,
+      dates: open.map((x) => x.d),
+      // Places still free, so a full date shows it joins the waitlist (00259).
+      spots: open.map((x) => spotsBySession.get(x.id) ?? null),
+    };
+  });
+  const oneOffSlot = termSlots[Math.min(termSlotIdx, termSlots.length - 1)];
+  const oneOffOpen = oneOffGroups[Math.min(termSlotIdx, oneOffGroups.length - 1)]?.dates ?? [];
+  const oneOffPicked = sessions.find((s) => s.id === sessionId)?.starts_at ?? null;
+  function pickOneOff(iso: string) {
+    const i = oneOffSlot?.dates.indexOf(iso) ?? -1;
+    const id = i >= 0 ? oneOffSlot!.sessionIds[i] : null;
+    if (!id) return;
+    setDateKey(sgDay(iso));
+    setSessionId(id);
+  }
+  // Keep the picked session inside the chosen group (first open date otherwise).
+  const firstOpen = oneOffOpen[0] ?? null;
+  const pickedOpen = !!oneOffPicked && oneOffOpen.includes(oneOffPicked) && !!oneOffSlot?.sessionIds.includes(sessionId ?? "");
+  useEffect(() => {
+    if (termEligible && !termMode && !pickedOpen && firstOpen) pickOneOff(firstOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termEligible, termMode, pickedOpen, firstOpen]);
+  // A "spot is available" link for a term session (/book?…&session=…&mode=…,
+  // 00259): open the term and group that session belongs to, then the session.
+  // Declared after the effect above so, on the render both run, this one wins.
+  const wantTermResolved = useRef(false);
+  useEffect(() => {
+    if (wantTermResolved.current || !wantSessionId || !termEligible) return;
+    const want = sessions.find((x) => x.id === wantSessionId);
+    if (!want) return;
+    for (const t of liveTerms) {
+      const i = t.slots.findIndex((sl) => sl.sessionIds.includes(wantSessionId));
+      if (i < 0) continue;
+      wantTermResolved.current = true;
+      setTermId(t.id);
+      setTermSlotIdx(i);
+      if (bookingOpen(want.starts_at, want.booking_cutoff_minutes ?? activity?.booking_cutoff_minutes)) {
+        setDateKey(sgDay(want.starts_at));
+        setSessionId(want.id);
+      }
+      return;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantSessionId, termEligible, liveTerms, sessions]);
+  // "A place is free" for a whole term (00260) links to its group and child:
+  // /book?…&term_slot=…&mode=term&child=….
+  const wantTermSlot = getParam("term_slot");
+  const wantSlotResolved = useRef(false);
+  useEffect(() => {
+    if (wantSlotResolved.current || !wantTermSlot || !termEligible) return;
+    for (const t of liveTerms) {
+      const i = t.slots.findIndex((sl) => sl.id === wantTermSlot);
+      if (i < 0) continue;
+      wantSlotResolved.current = true;
+      setTermId(t.id);
+      setTermSlotIdx(i);
+      return;
+    }
+  }, [wantTermSlot, termEligible, liveTerms]);
+  // "Places are free" for a pair (00264): /book?…&term_slots=a,b&mode=term.
+  const wantTermSlots = getParam("term_slots");
+  const wantSlotsResolved = useRef(false);
+  useEffect(() => {
+    if (wantSlotsResolved.current || !wantTermSlots || !termEligible) return;
+    const ids = wantTermSlots.split(",").filter(Boolean);
+    for (const t of liveTerms) {
+      const picks: Record<string, string> = {};
+      for (const id of ids) {
+        const sl = t.slots.find((x) => x.id === id);
+        if (sl) picks[sl.groupId] = id;
+      }
+      if (Object.keys(picks).length !== ids.length) continue;
+      wantSlotsResolved.current = true;
+      setTermId(t.id);
+      setTermPicks(picks);
+      return;
+    }
+  }, [wantTermSlots, termEligible, liveTerms]);
+  const wantChildResolved = useRef(false);
+  useEffect(() => {
+    const want = getParam("child");
+    if (wantChildResolved.current || !want || !kids.some((k) => k.id === want)) return;
+    wantChildResolved.current = true;
+    setChildId(want);
+  }, [kids]);
+
+  // Packs closed at this activity while the parent sat on "Use a package".
+  useEffect(() => {
+    if (!packagesOpen && bookMode === "package") { setBookMode("term"); setPayWith("single"); }
+  }, [packagesOpen, bookMode]);
+
+  // A mode the term doesn't offer (or this child's trials are used up): back to
+  // the whole term. A trial that's gone becomes a single session where singles
+  // are on, e.g. a trial waiter who used their trial elsewhere while waiting.
+  useEffect(() => {
+    if (!termEligible) return;
+    const o = termOffer;
+    // A waitlist link can open on single or trial before this child's trial
+    // count has loaded; judge it once it has.
+    if (o.trial && auth && !trialState && (bookMode === "single" || bookMode === "trial")) return;
+    const gone =
+      (bookMode === "single" && (!o.single || (o.trial && o.trialUsed < o.trialLimit))) ||
+      (bookMode === "trial" && (!o.trial || o.trialUsed >= o.trialLimit)) ||
+      (bookMode === "package" && !o.packages);
+    if (gone) chooseMode(bookMode === "trial" && o.single ? "single" : "term");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termEligible, bookMode, termOffer.trial, termOffer.single, termOffer.packages, termOffer.trialUsed, termOffer.trialLimit, trialState, auth]);
+
+  /** Same paperwork and age checks as a single booking; null when fine. */
+  function termCheckProblem(): string | null {
+    const consent = consentProblem();
+    if (consent) return consent;
+    if (childAgeMismatch) {
+      return `${bookChild!.name} is ${formatChildAge(bookChild!.date_of_birth)}, outside this class's ${ageText} age range. Pick a different child, or a class suited to their age.`;
+    }
+    return null;
+  }
+
+  /** Hand a held term booking (enrolment, trial or single) to Stripe. The
+   *  route prices it from the term, never from this page. */
+  async function payTermGroup(groupId: string) {
+    try {
+      const { url } = await apiPost<{ url?: string }>("/api/terms/checkout", { group_id: groupId });
+      if (url) { window.location.href = url; return; }
+      setBusy(false);
+      setErr("Could not start payment — please try again.");
+    } catch (e) {
+      setBusy(false);
+      setErr(e instanceof ApiError ? e.message : "Could not start payment — please try again.");
+    }
+  }
+
+  /** Enrol the child in the chosen slot: enrol_in_term() holds a seat on every
+   *  remaining session, then the parent pays for the lot. */
+  async function enrolTerm() {
+    setErr(null);
+    if (!auth) { goTo(loginHref()); return; }
+    if (flexTerm && !flexReady) { setErr("Pick one session from each group first."); return; }
+    if (!termSlot || !quote) return;
+    if (!quote.joinable) { setErr(quote.reason ?? "This term is not open for enrolment."); return; }
+    const problem = termCheckProblem();
+    if (problem) { setErr(problem); return; }
+    if (termSlotFull) return joinTermWaitlist();
+    setBusy(true);
+    // A pair of slots (Flexible) or one slot (Simple); the same checkout either way.
+    const slotIds = flexTerm ? flexSlots.map((s) => s!.id) : [termSlot.id];
+    const enrolRpc = flexTerm ? "enrol_in_term_combo" : "enrol_in_term";
+    const slotArg = flexTerm ? { p_slot_ids: slotIds } : { p_slot_id: termSlot.id };
+    const { data, error } = await termsDb
+      .rpc(enrolRpc, {
+        ...slotArg,
+        p_child_id: bookChildId,
+        p_policies: acceptedPolicies,
+        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+      })
+      .single();
+    if (error || !data) {
+      setBusy(false);
+      const msg = error ? cleanRpcErrorMessage(error) : "Could not enrol";
+      // Filled up since the page loaded: offer the waitlist instead (00260).
+      if (msg.includes("slot is full")) {
+        if (flexTerm) {
+          setErr("One of the sessions you picked has just filled up. Refresh the page to see which, then pick another or join the waitlist.");
+        } else {
+          setFilledSlots((s) => new Set(s).add(termSlot.id));
+          setErr("This slot has just filled up. You can join its waitlist for free.");
+        }
+        return;
+      }
+      setErr(msg);
+      return;
+    }
+    const groupId = (data as { group_id: string }).group_id;
+    // Brothers and sisters join the same checkout (and get the sibling discount).
+    for (const sib of termSiblings) {
+      const { error: sibErr } = await termsDb
+        .rpc(enrolRpc, {
+          ...slotArg,
+          p_child_id: sib.id,
+          p_policies: acceptedPolicies,
+          ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+          ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+          p_group_id: groupId,
+        })
+        .single();
+      if (sibErr) {
+        setBusy(false);
+        setErr(`Could not add ${sib.name}: ${cleanRpcErrorMessage(sibErr)}`);
+        return;
+      }
+    }
+    await payTermGroup(groupId);
+  }
+
+  /** The chosen group is full: the child (and any brothers and sisters picked)
+   *  go on its waitlist, free (join_term_waitlist, 00260). */
+  async function joinTermWaitlist() {
+    if (!termSlot || !quote) return;
+    setBusy(true);
+    for (const id of [bookChildId, ...termSiblings.map((k) => k.id)]) {
+      const { error } = await termsDb.rpc(flexTerm ? "join_term_combo_waitlist" : "join_term_waitlist", {
+        ...(flexTerm ? { p_slot_ids: flexSlots.map((s) => s!.id) } : { p_slot_id: termSlot.id }),
+        p_child_id: id,
+        p_policies: acceptedPolicies,
+        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+      });
+      if (error) {
+        setBusy(false);
+        const msg = cleanRpcErrorMessage(error);
+        setErr(msg.includes("A place is free") || msg.includes("Enrol now")
+          ? "A place has just come free. Refresh the page to enrol."
+          : msg);
+        return;
+      }
+    }
+    setBusy(false);
+    goTo(`/booked?${new URLSearchParams({
+      title: `${activity?.title ?? "your class"} · ${liveTerm?.name ?? "Term"}`,
+      slug: activity?.slug ?? "",
+      provider: activity?.provider_id ?? "",
+      pname: activity?.provider_name ?? "",
+      when: `${termSlot.label}${quote.joining[0] ? ` · from ${sgDay(quote.joining[0])}` : ""}`,
+      status: "waitlisted",
+      term: "1",
+      venue: displayVenue ?? "",
+    }).toString()}`);
+  }
+
+  /** A trial or single session of a term (book_term_class), then payment. */
+  async function bookTermClass(kind: "trial" | "single") {
+    if (!auth) { goTo(loginHref()); return; }
+    if (!sessionId) { setErr("Please choose a date first."); return; }
+    setBusy(true);
+    const { data, error } = await termsDb
+      .rpc("book_term_class", {
+        p_session_id: sessionId,
+        p_kind: kind,
+        p_child_id: bookChildId,
+        p_policies: acceptedPolicies,
+        ...(medicalNote.trim() ? { p_medical: medicalNote.trim() } : {}),
+        ...(infoResponse.trim() ? { p_info: infoResponse.trim() } : {}),
+      })
+      .single();
+    if (error || !data) {
+      setBusy(false);
+      setErr(error ? cleanRpcErrorMessage(error) : "Could not book this session");
+      return;
+    }
+    const d = data as { group_id: string; status: string };
+    if (d.status === "waitlisted") {
+      // The session, or its single places, are full: the child is on that
+      // session's waitlist, free (00259). Nothing to pay; same page as any waitlist.
+      setBusy(false);
+      goTo(`/booked?${new URLSearchParams({
+        title: activity?.title ?? "your class",
+        slug: activity?.slug ?? "",
+        provider: activity?.provider_id ?? "",
+        pname: activity?.provider_name ?? "",
+        when: selected ? sgDateTime(selected.starts_at) : "",
+        status: "waitlisted",
+        start: selected?.starts_at ?? "",
+        end: selected?.ends_at ?? "",
+        venue: displayVenue ?? "",
+        staff: displayStaff ?? "",
+      }).toString()}`);
+      return;
+    }
+    await payTermGroup(d.group_id);
+  }
+
   /** Route the CTA to whichever option was picked in step 4. */
   function checkout() {
     setErr(null);
     // The button is always clickable (see its comment above) so this is the
     // first thing a Pay tap with nothing chosen yet actually hits.
+    if (packageUnchosen) {
+      setErr("Choose a package to continue.");
+      return;
+    }
     if (!sessionId) {
       setErr(isEvent || isCourse ? "This isn't ready to book yet — try again shortly." : "Please choose a date and time first.");
       return;
@@ -1421,6 +1819,8 @@ export default function BookingPage() {
       // credits and pack purchases don't apply, and redeem_package_credit
       // 400s on an event occurrence. Guard here too in case payWith is stale.
       if (packagesNotOffered) return pay();
+      // A trial or single session of a term goes through the term, at its price.
+      if (termEligible && (bookMode === "trial" || bookMode === "single")) return bookTermClass(bookMode);
       if (payWith === "credit") return payWithPackage();
       if (payWith.startsWith("pack:")) return buyPack(payWith.slice(5));
       return pay();
@@ -1441,8 +1841,28 @@ export default function BookingPage() {
   }
 
   const selectedPack = payWith.startsWith("pack:") ? packs.find((p) => p.id === payWith.slice(5)) : undefined;
+  // A trial or single session of a term is charged at the term's own trial /
+  // single price (by /api/terms/checkout), not the activity's.
+  const trialUnit = termEligible && liveTerm && bookMode === "trial" ? liveTerm.trialPrice : null;
+  const termSingleUnit = termEligible && liveTerm && bookMode === "single" ? liveTerm.singlePrice : null;
+  // Package mode with no pack or credit picked yet (none exist, or they have not
+  // loaded): the single-session price must not stand in for it.
+  const packageUnchosen = termEligible && bookMode === "package" && payWith === "single";
+  const termOneOffUnit = trialUnit ?? termSingleUnit;
+  const shownTotal = termOneOffUnit != null ? termOneOffUnit * ticketCount : total;
+  // A trial or single date with no place left: booking it joins the waitlist.
+  const termOneOffSpots = termOneOffUnit != null && sessionId ? spotsBySession.get(sessionId) : undefined;
+  const termOneOffFull = termOneOffSpots != null && termOneOffSpots <= 0;
   const payLabel = !auth
     ? "Log in to book"
+    : packageUnchosen
+      ? "Choose a package"
+    : termOneOffFull
+      ? "Join the waitlist (free)"
+    : termSlotFull
+      ? `Join the waitlist${termSiblings.length > 0 ? ` for ${termSiblings.length + 1} children` : ""} (free)`
+    : termMode
+      ? `Enrol ${termSiblings.length > 0 ? `${termSiblings.length + 1} children` : "for the term"}${termTotal != null ? ` — $${termTotal.toFixed(2).replace(/\.00$/, "")}` : ""}`
     : isRsvpEvent
       ? "RSVP"
     : isEvent
@@ -1459,8 +1879,8 @@ export default function BookingPage() {
           ? "Confirm with a package credit"
           : selectedPack
             ? `Buy pack — $${(selectedPack.price_cents / 100).toFixed(0)}`
-            : total != null && total > 0
-              ? `Pay $${total.toFixed(2)}`
+            : shownTotal != null && shownTotal > 0
+              ? `Pay $${shownTotal.toFixed(2)}`
               : "Confirm booking";
   // What the summary sidebar and the "Total amount" block actually show —
   // must track payLabel's own amount, not always the single-class price.
@@ -1469,7 +1889,14 @@ export default function BookingPage() {
   // a pack's price; now that it goes through this same CTA, showing the
   // single-class total while the button says "Buy pack — $500" read as a
   // straight contradiction (QA).
-  const displayTotal = redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : total;
+  // Joining a waitlist costs nothing now (00259/00260).
+  const displayTotal = termSlotFull || termOneOffFull
+    ? 0
+    : termMode
+    ? termTotal
+    : packageUnchosen
+      ? null
+    : redeemToken || payWith === "credit" ? 0 : selectedPack ? selectedPack.price_cents / 100 : shownTotal;
 
   // Unlike the activity-detail page, booking needs sessions to pick a
   // default date/time immediately — wait for both phases, same as this
@@ -1527,6 +1954,96 @@ export default function BookingPage() {
                 </div>
               </div>
 
+              {/* Term enrolment (00243), behind the terms flag (lib/termsPreview.ts). */}
+              {termEligible && liveTerm && quote && (
+                <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
+                  <TermPicker
+                    terms={liveTerms.map((t) => {
+                      const dates = t.slots.flatMap((s) => s.dates).sort();
+                      const counts = t.slots.map((s) => s.dates.length);
+                      const prices = t.slots.map((s) => s.price);
+                      if (t.slotMode === "flexible") {
+                        return { key: t.id, name: t.name, range: `${sgDay(dates[0])} to ${sgDay(dates[dates.length - 1])}`, ...flexibleOffering(t, (n) => `$${n}`) };
+                      }
+                      return {
+                        key: t.id,
+                        name: t.name,
+                        sessions: Math.min(...counts) === Math.max(...counts) ? `${counts[0]} sessions` : `${Math.min(...counts)} to ${Math.max(...counts)} sessions`,
+                        range: `${sgDay(dates[0])} to ${sgDay(dates[dates.length - 1])}`,
+                        slots: t.slots.map((s) => ({ label: s.label, venue: s.venue })),
+                        price: Math.min(...prices) === Math.max(...prices) ? `$${prices[0]}` : `From $${Math.min(...prices)}`,
+                      };
+                    })}
+                    selected={liveTerm.id}
+                    onSelect={(id) => { setTermId(id); setTermSlotIdx(0); setTermPicks({}); }}
+                  />
+                  <BookModeChoice
+                    termName={liveTerm.name}
+                    quote={quote}
+                    price={termUnitPrice}
+                    trialPrice={liveTerm.allowTrial ? liveTerm.trialPrice : null}
+                    mode={bookMode}
+                    onModeChange={chooseMode}
+                    offer={packagesOpen ? termOffer : { ...termOffer, packages: false }}
+                  />
+                  {termMode && flexTerm && (
+                    <TermComboPicker
+                      termName={liveTerm.name}
+                      childName={bookChild?.name ?? "your child"}
+                      activityTitle={activity.title}
+                      groups={liveTerm.groups.map((g) => ({
+                        id: g.id,
+                        name: g.name,
+                        slots: liveTerm.slots
+                          .filter((s) => s.groupId === g.id)
+                          .map((s) => ({
+                            id: s.id, label: s.label, venue: s.venue, sessions: s.dates.length, spotsLeft: filledSlots.has(s.id) ? 0 : s.spotsLeft,
+                            clashWith: liveTerm.slots.filter((o) => o.groupId !== g.id && liveSlotsClash(s, o)).map((o) => o.id),
+                          })),
+                      }))}
+                      picks={termPicks}
+                      onPick={(gid, sid) => setTermPicks((p) => {
+                        // A pick in one group drops any pick in another group that runs at the same time.
+                        const picked = liveTerm.slots.find((x) => x.id === sid);
+                        const next = { ...p, [gid]: sid };
+                        for (const [g2, id2] of Object.entries(p)) {
+                          const other = liveTerm.slots.find((x) => x.id === id2);
+                          if (g2 !== gid && picked && other && liveSlotsClash(picked, other)) delete next[g2];
+                        }
+                        return next;
+                      })}
+                      quote={quote}
+                      minLeft={liveTerm.minLeft}
+                      allowMidTerm={liveTerm.allowMidTerm}
+                      reason={quote.reason}
+                      offered={offeredFlag}
+                    />
+                  )}
+                  {termMode && !flexTerm && (
+                    <TermEnrolPreview
+                      termName={liveTerm.name}
+                      slots={termSlots}
+                      onSlotChange={(i) => setTermSlotIdx(i)}
+                      quote={quote}
+                      minLeft={liveTerm.minLeft}
+                      allowMidTerm={liveTerm.allowMidTerm}
+                      reason={quote.reason}
+                      childName={bookChild?.name ?? "your child"}
+                      activityTitle={activity.title}
+                    />
+                  )}
+                  {!termMode && (
+                    <TermSessionPicker
+                      groups={oneOffGroups}
+                      groupIdx={termSlotIdx}
+                      onGroupChange={(i) => setTermSlotIdx(i)}
+                      selected={oneOffPicked}
+                      onSelect={pickOneOff}
+                    />
+                  )}
+                </div>
+              )}
+
               <div className="mt-6 space-y-6 border-t border-[#F4EFF0] pt-5">
                 {sessions.length === 0 ? (
                   <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">
@@ -1538,7 +2055,7 @@ export default function BookingPage() {
                   <>
                     {isCourse && (
                       <section>
-                        <h3 className="mb-4 text-xl font-black">1. Course schedule</h3>
+                        <h3 className="mb-4 text-xl font-black">Course schedule</h3>
                         <div className="rounded-[12px] border border-[#DCD2D5] bg-[#FAF7F7] p-4">
                           <p className="text-sm font-semibold text-[#5a6690]">
                             This is a course — one booking enrols your child for the whole run, every session below.
@@ -1595,12 +2112,12 @@ export default function BookingPage() {
                         )}
                       </section>
                     )}
-                    {(!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length === 0 && (
+                    {!termEligible && (!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length === 0 && (
                       <p className="rounded-[12px] bg-[#FFF5F8] p-4 font-semibold text-[#5a6690]">
                         Bookings for the upcoming sessions are closed — try “Enquire Now” on the class page to ask the provider.
                       </p>
                     )}
-                    {(!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length > 0 && (
+                    {!termEligible && (!isEvent || (sessions.length > 1 && !isMultiDay)) && !isCourse && dates.length > 0 && (
                       <>
                         <section>
                           <h3 className="mb-4 text-xl font-black">1. Choose a date</h3>
@@ -1680,7 +2197,7 @@ export default function BookingPage() {
                     )}
                     {kids.length > 1 && (
                       <section>
-                        <h3 className="mb-4 text-xl font-black">Who's this session for?</h3>
+                        <h3 className="mb-4 text-xl font-black">{termMode ? "Who's this term for?" : "Who's this session for?"}</h3>
                         <div className="flex flex-wrap gap-2">
                           {kids.map((k) => (
                             <button
@@ -1695,13 +2212,44 @@ export default function BookingPage() {
                         </div>
                       </section>
                     )}
+                    {termMode && liveTerm && kids.length > 1 && (
+                      <section>
+                        <h3 className="mb-1 text-lg font-black">Enrolling brothers or sisters too?</h3>
+                        <p className="mb-3 text-sm font-semibold text-[#59658d]">
+                          Add them to the same checkout
+                          {liveTerm.siblingDiscountPct > 0 && siblingPrice != null
+                            ? ` — ${liveTerm.siblingDiscountPct}% off, $${siblingPrice.toFixed(2).replace(/\.00$/, "")} each.`
+                            : "."}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {kids.filter((k) => k.id !== bookChildId).map((k) => {
+                            const fits = siblingFits(k.date_of_birth);
+                            const on = fits && siblingIds.includes(k.id);
+                            return (
+                              <button
+                                key={k.id}
+                                type="button"
+                                disabled={!fits}
+                                aria-pressed={on}
+                                title={fits ? undefined : `${k.name} is outside this class's ${ageText} age range`}
+                                onClick={() => setSiblingIds((ids) => (ids.includes(k.id) ? ids.filter((x) => x !== k.id) : [...ids, k.id]))}
+                                className={`flex items-center gap-2 rounded-[10px] border px-3 py-2 text-sm font-bold disabled:opacity-50 ${on ? "border-baby-pink bg-[#FEEBF2] text-baby-cta" : "border-[#DCD2D5] bg-white"}`}
+                              >
+                                <AnimalAvatar seed={k.avatar_seed ?? k.name} kind="child" gender={k.gender} className="h-6 w-6" />
+                                {on ? "✓ " : "+ "}{k.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
                     {childAgeMismatch && bookChild && (
                       <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
                         {bookChild.name} is {formatChildAge(bookChild.date_of_birth)}, outside this class's {ageText} age range — you won't be able to confirm this booking with them selected.
                       </p>
                     )}
-                    {alreadyBooked && !childAgeMismatch && (
+                    {!termMode && alreadyBooked && !childAgeMismatch && (
                       <p className="flex items-start gap-2 rounded-[10px] bg-[#FEF2D7] px-4 py-2.5 text-sm font-bold text-yellow-600">
                         <Icon name="bell" className="mt-0.5 h-4 w-4 flex-shrink-0" />
                         {alreadyBookedPending
@@ -1709,8 +2257,9 @@ export default function BookingPage() {
                           : <span>{bookChild?.name ?? "This child"} is already booked on this session — you can book again if you need a second place, and we&rsquo;ll check first.</span>}
                       </p>
                     )}
+                    {!termMode && (
                     <section>
-                      <h3 className="mb-2 text-xl font-black">{isMultiDay ? "Number of children" : isEvent ? "Number of tickets" : isCourse ? "2. Number of children" : "3. Number of tickets/passes"}</h3>
+                      <h3 className="mb-2 text-xl font-black">{isMultiDay || isCourse ? "Number of children" : isEvent ? "Number of tickets" : "Number of tickets/passes"}</h3>
                       <div className="inline-grid grid-cols-3 overflow-hidden rounded-[10px] border border-[#DCD2D5] text-xl font-black">
                         <button type="button" onClick={() => setCount((c) => Math.max(minChildren, c - 1))} className="h-12 w-12">-</button>
                         <span className="grid h-12 w-14 place-items-center">{count}</span>
@@ -1726,7 +2275,8 @@ export default function BookingPage() {
                         </p>
                       )}
                     </section>
-                    {(!isEvent || isRsvpEvent) && !isCourse && count > 1 && (
+                    )}
+                    {!termMode && (!isEvent || isRsvpEvent) && !isCourse && count > 1 && (
                       <section>
                         <h3 className="mb-2 text-lg font-black">Names <span className="text-sm font-semibold text-[#59658d]">(optional)</span></h3>
                         <p className="mb-3 text-sm font-semibold text-[#59658d]">
@@ -1763,7 +2313,7 @@ export default function BookingPage() {
                             step, so its Provider terms is always step 3. The
                             package step (when present) comes after terms, not
                             before — see "5. Select package" below. */}
-                        <h3 className="mb-2 text-xl font-black">{isEvent ? "" : `${isCourse ? 3 : 4}. `}Provider terms</h3>
+                        <h3 className="mb-2 text-xl font-black">Provider terms</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">
                           {activity?.provider_name?.trim() || "This provider"} asks you to read and accept the following before the class.
                         </p>
@@ -1913,17 +2463,19 @@ export default function BookingPage() {
                         books a real seat, so the same slot + terms gating the
                         main CTA already enforces for a single-class booking
                         must apply here too — see checkout()/buyPack(). */}
-                    {!redeemToken && !packagesNotOffered && (
+                    {!termMode && !redeemToken && !packagesNotOffered && packagesOpen && (!termEligible || (termOffer.packages && bookMode === "package")) && (
                       <section>
-                        <h3 className="mb-2 text-xl font-black">5. Select package</h3>
+                        <h3 className="mb-2 text-xl font-black">Select package</h3>
                         <p className="mb-4 text-sm font-semibold text-[#59658d]">Pay for this session on its own, or use a multi-session pack.</p>
                         <div className="space-y-3">
-                          <PackageOption
-                            selected={payWith === "single"}
-                            onSelect={() => setPayWith("single")}
-                            title="Single session"
-                            price={price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
-                          />
+                          {!(termEligible && bookMode === "package") && (
+                            <PackageOption
+                              selected={payWith === "single"}
+                              onSelect={() => setPayWith("single")}
+                              title={trialUnit != null ? "Trial session" : "Single session"}
+                              price={termOneOffUnit != null ? `$${(termOneOffUnit * count).toFixed(2)}` : price != null ? `$${(price * count).toFixed(2)}` : "Price on enquiry"}
+                            />
+                          )}
                           {packageCredit && matchingCredits.length === 1 && (
                             <PackageOption
                               selected={payWith === "credit"}
@@ -2015,16 +2567,16 @@ export default function BookingPage() {
               </div>
             </section>
 
-            <aside className="rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll">
+            <aside className={`rounded-[16px] border border-[#EBE3E5] bg-white p-5 shadow-card lg:sticky lg:top-[90px] lg:self-start lg:max-h-[calc(100dvh-106px)] lg:overflow-y-auto bb-slim-scroll`}>
               <h2 className="text-xl font-black">Booking summary</h2>
               <div className="mt-5 flex gap-4">
                 <img src={summaryImg.src} onError={summaryImg.onError} alt="" width={112} height={96} loading="lazy" decoding="async" className={`h-24 w-28 rounded-[10px] bg-[#F3EDF0] object-contain${summaryImg.isLogo ? " p-3" : ""}`} />
                 <div><h3 className="font-black">{activity.title}</h3><p className="mt-1 text-sm font-semibold">{ageText}</p>{activity.category_name && <div className="mt-2 flex flex-wrap gap-1.5">{[activity.category_name, activity.category_name_2].filter((n): n is string => !!n).map((n) => <span key={n} className="inline-block rounded-full bg-[#FEEBF2] px-3 py-1 text-xs font-bold text-baby-cta">{n}</span>)}</div>}</div>
               </div>
               <div className="mt-5 space-y-4 font-semibold text-[#3f4b78]">
-                <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
+                <p className="flex gap-2"><Icon name="calendar" className="h-5 w-5 shrink-0 text-baby-lilac" /> {termMode && quote ? `Term · ${quote.slot.label} · ${quote.left} sessions from ${sgDay(quote.joining[0])}` : selected ? sgDateTime(selected.starts_at) : "Select a date & time"}</p>
                 {displayVenue && <p className="flex gap-2"><Icon name="pin" className="h-5 w-5 shrink-0 text-baby-lilac" /> {displayVenue}</p>}
-                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</p>
+                <p className="flex gap-2"><Icon name="user" className="h-5 w-5 shrink-0 text-baby-lilac" /> {termMode ? `${[bookChild?.name ?? "1 child", ...termSiblings.map((k) => k.name)].join(", ")}, ${ageText}` : <>{count} {isCourse || isMultiDay ? (count === 1 ? "child" : "children") : (count === 1 ? "ticket" : "tickets")}, {ageText}</>}</p>
               </div>
               <div className="my-5 border-t border-[#F4EFF0]" />
               <p className="flex justify-between text-lg font-black"><span>{monthlyBilled ? "On your monthly invoice" : "Total"}</span><span className="text-baby-pink">{displayTotal != null ? `$${displayTotal.toFixed(2)}` : "Price on enquiry"}</span></p>
@@ -2070,7 +2622,7 @@ export default function BookingPage() {
             // bug this guards against. It stays tappable in that dimmed state
             // so checkout() can surface a friendly message via the alert
             // above explaining what's left, instead of just sitting there.
-            <Button type="button" size="lg" onClick={checkout} disabled={busy} className={busy || bookingIncomplete ? "opacity-60" : ""}>
+            <Button type="button" size="lg" onClick={termMode ? enrolTerm : checkout} disabled={busy} className={busy || bookingIncomplete ? "opacity-60" : ""}>
               <Icon name="lock" className="h-5 w-5" /> {busy ? "Confirming…" : payLabel}
             </Button>
           )}

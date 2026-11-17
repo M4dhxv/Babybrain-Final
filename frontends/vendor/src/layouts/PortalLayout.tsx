@@ -175,7 +175,7 @@ export default function PortalLayout() {
           {isSidebarCollapsed ? (
             <BrandIcon className="h-8 w-8" />
           ) : (
-            <BrandLogo className="h-9" />
+            <BrandLogo className="h-12" />
           )}
         </div>
 
