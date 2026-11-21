@@ -11,14 +11,28 @@ type Admin = ReturnType<typeof createAdminClient>;
  *  (00263). The column is newer than the generated types. */
 async function termKindsFor(admin: Admin, ids: string[]) {
   const kinds = new Map<string, string>();
-  if (!ids.length) return kinds;
-  const { data } = await (admin as unknown as SupabaseClient)
+  /** Enrolment sessions (kind 'term') of a term that has started: a parent can't cancel these online (00278). */
+  const started = new Set<string>();
+  if (!ids.length) return { kinds, started };
+  const db = admin as unknown as SupabaseClient;
+  const { data } = await db
     .from('bookings')
-    .select('id, term_booking_kind')
+    .select('id, term_booking_kind, session_id')
     .in('id', ids)
     .not('term_booking_kind', 'is', null);
-  for (const r of (data ?? []) as { id: string; term_booking_kind: string }[]) kinds.set(r.id, r.term_booking_kind);
-  return kinds;
+  const rows = (data ?? []) as { id: string; term_booking_kind: string; session_id: string }[];
+  for (const r of rows) kinds.set(r.id, r.term_booking_kind);
+  const enrolment = rows.filter((r) => r.term_booking_kind === 'term');
+  if (enrolment.length) {
+    // The function is newer than the generated types, and absent until 00278 is applied: then nothing
+    // is marked started and the database guard (also 00278) is absent too, so the two always agree.
+    const { data: ses, error } = await db.rpc('term_sessions_started', { p_session_ids: [...new Set(enrolment.map((r) => r.session_id))] });
+    if (!error) {
+      const live = new Set(((ses ?? []) as { session_id: string }[]).map((x) => x.session_id));
+      for (const r of enrolment) if (live.has(r.session_id)) started.add(r.id);
+    }
+  }
+  return { kinds, started };
 }
 
 /** Was this booking paid for entirely with make-up credit? Either it was made by redeeming a one-booking
@@ -420,7 +434,7 @@ export async function GET(request: Request) {
   // matches a waitlisted one (active-only, isActive above always keeps
   // waitlisted rows out of history) — running either for the scope that
   // can't use it would just be a wasted round trip.
-  const [redeemedByToken, autoCompensated, { claimable, openFree, termKinds }, eventTickets, eventAccess, bookingTermKinds, addonsByBooking, companionByActivity] = await Promise.all([
+  const [redeemedByToken, autoCompensated, { claimable, openFree, termKinds }, eventTickets, eventAccess, bookingTerm, addonsByBooking, companionByActivity] = await Promise.all([
     redeemedTokensFor(admin, allIds),
     scope === 'history' ? autoCompensatedFor(admin, allIds) : Promise.resolve(new Set<string>()),
     scope === 'active'
@@ -486,7 +500,9 @@ export async function GET(request: Request) {
       spot_open: openFree.has(r.id),
       // A waitlist place on a term session (00259): how it was booked, so the
       // card pays through the term and opens the booking page in that mode.
-      term_kind: bookingTermKinds.get(r.id) ?? termKinds.get(r.id) ?? null,
+      term_kind: bookingTerm.kinds.get(r.id) ?? termKinds.get(r.id) ?? null,
+      // An enrolment session of a term that has begun: the family asks the provider to cancel it (00278).
+      term_started: bookingTerm.started.has(r.id),
       // How a cancelled booking was made good (00080/00081) — the permanent
       // line on the card. 'none' when the provider withheld a refund, so the
       // card doesn't imply a credit came back off a lingering

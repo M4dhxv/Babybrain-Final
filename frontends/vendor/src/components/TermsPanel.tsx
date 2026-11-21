@@ -712,6 +712,10 @@ function TermForm({
       if (problem) return setError(`${slotLabel(sl)}: ${problem}`);
     }
     if (t.price <= 0 && t.slots.some((sl) => sl.offerTerm)) return setError('Set the full term price.');
+    if (t.earlyPrice != null) {
+      if (!t.earlyUntil) return setError('Choose the last day of the early price, or switch it off.');
+      if (t.earlyPrice < 0 || t.earlyPrice >= t.price) return setError('The early price has to be lower than the full term price.');
+    }
     if (t.allowTrial && t.trialLimit < 1) return setError('Set how many trial sessions one child can take.');
     setError(null);
     onSave({ ...t, name: t.name.trim(), status });
@@ -1014,6 +1018,33 @@ function TermForm({
               Applies to every slot. Each slot can still be set by weeks below.
             </p>
           </div>
+          <div className="border-t border-gray-100 pt-5 sm:col-span-2">
+            <ToggleRow
+              title="Early price"
+              hint="Offer a lower price to families who enrol by a date. After that day the normal price applies again."
+              checked={t.earlyPrice != null}
+              onChange={(v) => set(v ? { earlyPrice: Math.max(0, Math.round(t.price * 0.9)) } : { earlyPrice: null, earlyUntil: null })}
+            />
+            {t.earlyPrice != null && (
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls}>Early price (SGD per child)</label>
+                  <NumberInput min="0" step="any" className={inputCls} value={String(t.earlyPrice)} onChange={(e) => set({ earlyPrice: Number(e.target.value) || 0 })} aria-label="Early price" />
+                </div>
+                <div>
+                  <label className={labelCls}>Last day to get it</label>
+                  <DatePicker className={inputCls} value={t.earlyUntil ?? ''} onChange={(v) => set({ earlyUntil: v || null })} aria-label="Last day of the early price" />
+                </div>
+                <p className={cn('sm:col-span-2', hintCls, t.earlyPrice >= t.price && 'font-semibold text-red-600', t.earlyPrice < t.price && !t.earlyUntil && 'font-semibold text-amber-700')}>
+                  {t.earlyPrice >= t.price
+                    ? 'The early price has to be lower than the full term price.'
+                    : !t.earlyUntil
+                      ? "Choose the last day, or the early price won't be saved."
+                      : `Families who enrol up to and including ${fmtShort(t.earlyUntil)} pay SGD ${t.earlyPrice} (SGD ${Math.round((t.price - t.earlyPrice) * 100) / 100} off). From the next day the price is back to SGD ${t.price}.${flexible ? '' : ' A slot with its own price gets the same amount off.'} A family that has started enrolling keeps the price they were shown.`}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </Section>
 
@@ -1304,7 +1335,7 @@ function TermForm({
         })()}
       </Section>
 
-      <Section n={6} title="Withdrawing" subtitle="Whether a family can leave before the term starts, and what they get back. Once it has started they can't withdraw online: they ask you.">
+      <Section n={6} title="Withdrawing" subtitle="Whether a family can leave before the term starts, and what they get back. Once it has started they can't withdraw or cancel sessions online: they ask you.">
         {(() => {
           // A published term keeps the policy its families enrolled under. One with no policy yet
           // (an older term) can still be given one.
@@ -1811,6 +1842,9 @@ function PublishedTermTools({ term, hasNext, onCopy }: { term: Term; hasNext: bo
 
       {showRoster && (
         <div className="rounded-xl border border-gray-200">
+          <p className={cn('border-b border-gray-100 p-3', hintCls)}>
+            Once a term has started, families can't cancel or move its sessions themselves. To cancel one session for a family (and choose whether they get a make-up token) or move them to another session, open it under Bookings.
+          </p>
           {roster === null ? (
             <p className={cn('p-3', hintCls)}>Loading…</p>
           ) : roster.length === 0 ? (

@@ -1,5 +1,6 @@
 import type { PreviewSlot } from "../lib/termsPreview";
 import { sgDay, sgTime } from "../lib/schedule";
+import { earlyDateLabel } from "../lib/terms";
 
 /** term = enrol for the whole term; single / trial = one session; package = pick
  *  sessions when convenient and pay with pack credits. */
@@ -28,6 +29,8 @@ export type TermQuote = {
   singlesTotal: number | null;
   /** What the term saves against booking every session singly — null when it saves nothing. */
   savings: number | null;
+  /** Last day of the early price lowering the price right now (00278), if any. */
+  earlyUntil?: string | null;
   lastJoin: number;
   run: number;
   left: number;
@@ -106,8 +109,11 @@ export function BookModeChoice({
           {quote.payNow != null && (
             <span className="mt-2 block text-lg font-black text-baby-cta">
               ${quote.payNow}
-              {midTerm && quote.fullPrice != null && quote.payNow < quote.fullPrice && (
+              {(midTerm || quote.earlyUntil) && quote.fullPrice != null && quote.payNow < quote.fullPrice && (
                 <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${quote.fullPrice}</span>
+              )}
+              {quote.earlyUntil && (
+                <span className="ml-2 rounded-full bg-[#DDF3EE] px-2 py-0.5 text-xs font-black text-[#0F6E56]">Early price until {earlyDateLabel(quote.earlyUntil)}</span>
               )}
               {!midTerm && offer.single && quote.savings != null && (
                 <span className="ml-2 text-xs font-bold text-[#0F6E56]">Save ${quote.savings} vs single sessions</span>
@@ -189,6 +195,7 @@ export function TermEnrolPreview({
   reason?: string | null;
 }) {
   const { slot, run, left, n, payNow, fullPrice, perClass } = quote;
+  const earlyUntil = (quote as { earlyUntil?: string | null }).earlyUntil ?? null;
 
   return (
     <section className="space-y-5">
@@ -248,10 +255,15 @@ export function TermEnrolPreview({
           {payNow != null && (
             <span className="text-2xl font-black text-baby-cta">
               ${payNow}
-              {run > 0 && fullPrice != null && payNow < fullPrice && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
+              {(run > 0 || earlyUntil) && fullPrice != null && payNow < fullPrice && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
             </span>
           )}
         </div>
+        {earlyUntil && (
+          <p className="mt-1 text-sm font-bold text-[#0F6E56]">
+            Early price: enrol by {earlyDateLabel(earlyUntil)} to pay ${payNow}. After that it is ${fullPrice != null ? (perClass != null && perClass > 0 ? Math.max(0, fullPrice - perClass * run) : fullPrice) : payNow}.
+          </p>
+        )}
         {run > 0 && (
           <p className="mt-1 text-sm font-semibold text-[#59658d]">
             {run} {run === 1 ? "session has" : "sessions have"} already run.{" "}
@@ -303,7 +315,7 @@ export function TermComboPicker({
   /** group id -> picked slot id */
   picks: Record<string, string | undefined>;
   onPick: (groupId: string, slotId: string) => void;
-  quote: { n: number; left: number; run: number; fullPrice: number | null; payNow: number | null; perClass: number | null; joining: string[] };
+  quote: { n: number; left: number; run: number; fullPrice: number | null; payNow: number | null; perClass: number | null; joining: string[]; earlyUntil?: string | null };
   minLeft: number;
   allowMidTerm: boolean;
   reason?: string | null;
@@ -392,10 +404,15 @@ export function TermComboPicker({
               {payNow != null && (
                 <span className="text-2xl font-black text-baby-cta">
                   ${payNow}
-                  {run > 0 && fullPrice != null && payNow < fullPrice && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
+                  {(run > 0 || quote.earlyUntil) && fullPrice != null && payNow < fullPrice && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
                 </span>
               )}
             </div>
+            {quote.earlyUntil && fullPrice != null && payNow != null && (
+              <p className="mt-1 text-sm font-bold text-[#0F6E56]">
+                Early price: enrol by {earlyDateLabel(quote.earlyUntil)} to pay ${payNow}. After that it is ${perClass != null && perClass > 0 ? Math.max(0, fullPrice - perClass * run) : fullPrice}.
+              </p>
+            )}
             {run > 0 && (
               <p className="mt-1 text-sm font-semibold text-[#59658d]">
                 {run} {run === 1 ? "session has" : "sessions have"} already run across your slots.{" "}

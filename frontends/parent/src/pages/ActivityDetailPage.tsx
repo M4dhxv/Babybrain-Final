@@ -18,7 +18,7 @@ import { goTo, loginUrl, getParam, scrollToWhenReady, rememberExploreUrl, explor
 import { sgDateTime, sgDay, sgDayRange, courseStrands, isMultiDay, bookingOpen } from "../lib/schedule";
 import { EnrolmentOptions, UpcomingSchedule, type OfferingOneOff, type OfferingPack, type OfferingTerm } from "../components/TermBookingPreview";
 import { termsPreviewEnabled } from "../lib/termsPreview";
-import { useActivityTerms, flexibleOffering } from "../lib/terms";
+import { useActivityTerms, flexibleOffering, earlyNow, earlyDateLabel } from "../lib/terms";
 import { SessionSchedule } from "../components/SessionSchedule";
 import { resolveActivityImages, providerLogoUrl, FALLBACK_LOGO_URL } from "../lib/activityMedia";
 import { formatAgeRange, formatDuration } from "../lib/database.types";
@@ -678,7 +678,8 @@ export default function ActivityDetailPage() {
     const lo = Math.min(...counts);
     const hi = Math.max(...counts);
     const all = t.slots.flatMap((s) => s.dates).sort();
-    const prices = priced.map((s) => s.price);
+    const early = earlyNow(t);
+    const prices = priced.map((s) => Math.max(0, s.price - (early?.off ?? 0)));
     return {
       key: t.id,
       name: t.name,
@@ -694,7 +695,7 @@ export default function ActivityDetailPage() {
           ...(s.offers.package ? ["Packs"] : []),
         ],
       })),
-      price: Math.min(...prices) === Math.max(...prices) ? money(prices[0]) : `From ${money(Math.min(...prices))}`,
+      price: `${Math.min(...prices) === Math.max(...prices) ? money(prices[0]) : `From ${money(Math.min(...prices))}`}${early ? ` · early price until ${earlyDateLabel(early.until)}` : ""}`,
     };
   });
   // "Enrollment options" lists a term only where some group can be enrolled in for the whole term.

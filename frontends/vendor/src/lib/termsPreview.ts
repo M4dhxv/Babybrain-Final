@@ -142,6 +142,11 @@ export type Term = {
   reduce: boolean;
   /** Fixed SGD taken off for every session that has already run. */
   reduceBy: number;
+  /** Early price (00278): what the term costs until `earlyUntil` (a Singapore date, YYYY-MM-DD, the whole day). Both or neither. */
+  earlyPrice: number | null;
+  earlyUntil: string | null;
+  /** The database this term was read from has the early-price columns (00278), so they are saved with it. */
+  earlyKnown: boolean;
   allowSingles: boolean;
   singlePrice: number;
   /** Trial session: one session at an intro price, limited per child. Can be on
@@ -265,6 +270,8 @@ type TermRow = {
   min_left: number;
   reduce_enabled: boolean;
   reduce_by_cents: number;
+  early_price_cents?: number | null;
+  early_price_until?: string | null;
   allow_singles: boolean;
   single_price_cents: number;
   allow_trial: boolean;
@@ -296,6 +303,9 @@ function fromRow(r: TermRow): Term {
     minLeft: r.min_left,
     reduce: r.reduce_enabled,
     reduceBy: toDollars(r.reduce_by_cents),
+    earlyPrice: r.early_price_cents != null ? toDollars(r.early_price_cents) : null,
+    earlyUntil: r.early_price_until ?? null,
+    earlyKnown: 'early_price_cents' in r,
     allowSingles: r.allow_singles,
     singlePrice: toDollars(r.single_price_cents),
     allowTrial: r.allow_trial,
@@ -359,6 +369,14 @@ const termFields = (t: Term) => ({
   min_left: Math.max(1, t.minLeft),
   reduce_enabled: t.reduce,
   reduce_by_cents: toCents(t.reduceBy),
+  // Only sent once there is something to say, or the database is known to have the columns (00278), so a term
+  // saved without an early price still works against a database that has not had that migration yet.
+  ...(t.earlyKnown || t.earlyPrice != null
+    ? {
+        early_price_cents: t.earlyPrice != null && t.earlyUntil ? toCents(t.earlyPrice) : null,
+        early_price_until: t.earlyPrice != null && t.earlyUntil ? t.earlyUntil : null,
+      }
+    : {}),
   // What the term allows is what its groups add up to (00275): the database keeps these as the outer bound.
   allow_singles: t.slots.some((s) => s.offerSingle),
   single_price_cents: toCents(Math.min(...t.slots.filter((s) => s.offerSingle).map((s) => s.singlePrice), t.slots.some((s) => s.offerSingle) ? Infinity : t.singlePrice)),
@@ -671,9 +689,20 @@ export function termStats(term: Term) {
   return { enrolled, seatsLeft, revenue };
 }
 
-/** What a parent pays if they join after `passed` sessions have run. */
-export function priceAfter(term: Pick<Term, 'price' | 'reduce' | 'reduceBy'>, passed: number): number {
-  return term.reduce ? Math.max(0, term.price - term.reduceBy * passed) : term.price;
+/** What a parent pays if they join after `passed` sessions have run. `off` is the early price's discount, if one
+ *  is running (earlyOffNow). */
+export function priceAfter(term: Pick<Term, 'price' | 'reduce' | 'reduceBy'>, passed: number, off = 0): number {
+  const base = Math.max(0, term.price - off);
+  return term.reduce ? Math.max(0, base - term.reduceBy * passed) : base;
+}
+
+/** What the term's early price takes off right now, in dollars, and its last day; null when there is none or its
+ *  last day (the whole of it, Singapore time) has passed. Mirrors term_early_discount() in 00278. */
+export function earlyOffNow(term: Pick<Term, 'price' | 'earlyPrice' | 'earlyUntil'>, now = Date.now()): { off: number; until: string } | null {
+  if (term.earlyPrice == null || !term.earlyUntil) return null;
+  const endsAt = Date.parse(`${term.earlyUntil}T00:00:00+08:00`) + 86_400_000;
+  const off = Math.max(0, term.price - term.earlyPrice);
+  return now < endsAt && off > 0 ? { off, until: term.earlyUntil } : null;
 }
 
 /** How many sessions can have run while the term still takes new joiners. */
@@ -706,6 +735,9 @@ export function blankTerm(activityId: string, defaults: { price?: number | null;
     minLeft: 3,
     reduce: true,
     reduceBy: defaults.price != null ? Math.round(defaults.price) : 0,
+    earlyPrice: null,
+    earlyUntil: null,
+    earlyKnown: false,
     allowSingles: false,
     singlePrice: defaults.price != null ? Math.round(defaults.price) : 0,
     allowTrial: false,
@@ -906,7 +938,11 @@ export function termHeadline(terms: Term[], activityId: string): Headline | null
   if (trial.length > 0) return { kind: 'trial', price: Math.min(...trial) };
   const single = live.filter((t) => t.allowSingles).map((t) => t.singlePrice);
   if (single.length > 0) return { kind: 'single', price: Math.min(...single) };
-  const prices = live.flatMap((t) => t.slots.map((s) => slotPrice(t, s)));
+  // While an early price is running, the card leads with it (as term_headline_prices does, 00278).
+  const prices = live.flatMap((t) => {
+    const off = earlyOffNow(t)?.off ?? 0;
+    return t.slots.map((s) => Math.max(0, slotPrice(t, s) - off));
+  });
   return prices.length > 0 ? { kind: 'term', price: Math.min(...prices) } : null;
 }
 
@@ -1098,6 +1134,9 @@ export function nextTermFrom(t: Term): Term {
     status: 'draft',
     previousTermId: t.id,
     priorityUntil: null,
+    // An early price belongs to the term it was set on; its date would already be past.
+    earlyPrice: null,
+    earlyUntil: null,
     groups: t.groups.map((g) => ({ ...g, id: groupIds.get(g.id)! })),
     slots: t.slots.map((s) => {
       const d = new Date(after);
