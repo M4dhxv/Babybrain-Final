@@ -522,6 +522,72 @@ const T: Record<string, Template> = {
       sign);
   },
 
+  // The provider moved an enrolled family to another slot of the same group
+  // (vendor_swap_term_slot, 00264). Remaining sessions moved with them.
+  term_slot_changed: (d, ctx) => {
+    const term = str(d, 'term_name') ?? 'your term';
+    const moved = Number(d.sessions_moved ?? NaN);
+    return wrap(ctx, `Your slot in ${term} has changed 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`${bold(str(d, 'provider_name') ?? 'The provider')} has moved ${str(d, 'child_name') ? bold(str(d, 'child_name')!) : 'your child'} to a different slot in ${bold(term)}${str(d, 'activity_name') ? ` (${esc(str(d, 'activity_name')!)})` : ''}.`) +
+      p(`${Number.isFinite(moved) && moved > 0 ? `Their remaining ${moved} session${moved === 1 ? ' has' : 's have'}` : 'Their remaining sessions have'} moved with them. There is nothing more to pay.`) +
+      p(`You can see the new days and times under ${link(ctx, str(d, 'url') ?? '/profile?tab=bookings', 'Bookings')}. If that does not work for your family, please reply to this email or message the provider.`) +
+      sign);
+  },
+
+  // A trial waitlist place closed because the child's trial with this provider
+  // is now used (00269). Never charged; points to the next best step.
+  term_trial_waitlist_closed: (d, ctx) => {
+    const url = str(d, 'url') ?? '/explore';
+    const singles = d.singles_offered === true;
+    return wrap(ctx, 'Your trial waitlist place has closed 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Your child has now used their trial with this provider, so the trial waitlist place${str(d, 'activity_name') ? ` for ${bold(str(d, 'activity_name')!)}` : ''} has closed. You haven’t been charged anything.`) +
+      (singles
+        ? p('You can still book that session as a single session instead:') + cta(`${ctx.appUrl}${url}`, 'Book a single session')
+        : p(`${esc(str(d, 'term_name') ?? 'This term')} doesn’t offer single sessions, but you can enrol in the whole term:`) + cta(`${ctx.appUrl}${url}`, 'See the term')) +
+      sign);
+  },
+
+  // A family withdrew from a term under the vendor's policy (00274). What
+  // happens to the money depends on the outcome the database recorded.
+  term_withdrawn: (d, ctx) => {
+    const term = str(d, 'activity_title') ?? str(d, 'term_name') ?? 'the term';
+    const money = (k: string) => {
+      const c = Number(d[k] ?? NaN);
+      return Number.isFinite(c) && c > 0 ? `$${(c / 100).toFixed(c % 100 ? 2 : 0)}` : null;
+    };
+    const status = str(d, 'status');
+    const credit = money('credit_cents');
+    const days = Number(d.credit_days ?? NaN);
+    const outcome =
+      status === 'refund_due'
+        ? p('Your refund is the amount you paid less the payment processing fee. It is processed by hand, and we will email you again once it has gone back to your card.')
+        : status === 'credit_issued'
+          ? p(`${credit ? `You now have a ${bold(credit)} credit` : 'You now have a credit'} with the provider, which you can use on another term of theirs${Number.isFinite(days) && days > 0 ? `, valid for ${days} days` : ''}.`)
+          : status === 'no_refund'
+            ? p('This term is non-refundable, so there is nothing to refund.')
+            : p('Nothing had been paid, so there is nothing to refund.');
+    return wrap(ctx, `You have withdrawn from ${term} 👶🧠`,
+      p(greet(ctx.recipientName)) +
+      p(`You have withdrawn from ${bold(term)}. Your remaining sessions have been cancelled.`) +
+      outcome +
+      p(`You can see this under ${link(ctx, '/profile?tab=bookings', 'Bookings')}. If you have any questions, reply to this email and we will be happy to help.`) +
+      sign);
+  },
+
+  // The provider marked a withdrawal refund as paid (vendor_mark_term_refund, 00274).
+  term_refund_processed: (d, ctx) => {
+    const term = str(d, 'activity_title') ?? 'the term';
+    const c = Number(d.refund_cents ?? NaN);
+    const amount = Number.isFinite(c) && c > 0 ? `$${(c / 100).toFixed(c % 100 ? 2 : 0)}` : null;
+    return wrap(ctx, 'Your refund has been processed 👶🧠',
+      p(greet(ctx.recipientName)) +
+      p(`Your refund${amount ? ` of ${bold(amount)}` : ''} for ${bold(term)} has gone back to the card you paid with.`) +
+      p('It can take a few working days to show on your statement, depending on your bank.') +
+      sign);
+  },
+
   booking_reminder: (d, ctx) =>
     wrap(ctx, 'You have an upcoming booking 👶🧠',
       p(greet(ctx.recipientName)) +
