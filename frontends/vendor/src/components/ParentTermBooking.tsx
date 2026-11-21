@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
-  dayTimeFor, isFlexible, lastJoinableAfter, priceAfter, slotDates, slotPrice, slotsClash,
+  dayTimeFor, earlyOffNow, isFlexible, lastJoinableAfter, priceAfter, slotDates, slotPrice, slotsClash,
   type Term, type TermSlot,
 } from '@/lib/termsPreview';
 
@@ -47,6 +47,8 @@ export type TermView = {
   minLeft: number;
   reduce: boolean;
   reduceBy: number;
+  /** The early price running right now (00278): dollars off, and its last day. */
+  early: { off: number; until: string } | null;
   /** One-off options the vendor has on: either, both or neither. */
   trial: boolean;
   single: boolean;
@@ -69,6 +71,8 @@ export type TermQuote = {
   payNow: number;
   /** What a mid-term joiner is not charged for. */
   reducedBy: number;
+  /** Last day of the early price lowering `payNow` (00278), if one is running. */
+  earlyUntil: string | null;
   joining: string[];
 };
 
@@ -116,6 +120,7 @@ export function buildTermView(
     minLeft: term.minLeft,
     reduce: term.reduce,
     reduceBy: term.reduceBy,
+    early: earlyOffNow(term),
     trial: term.allowTrial,
     single: term.allowSingles,
     singlePrice: term.singlePrice,
@@ -154,25 +159,27 @@ export function quoteFor(view: TermView, slotIdx: number, passed: number): TermQ
     const n = picks.reduce((x, s) => x + s.dates.length, 0);
     const lastJoin = lastJoinableAfter({ allowMidTerm: view.allowMidTerm, minLeft: view.minLeft }, per);
     const run = Math.min(passed, lastJoin);
-    const payNow = priceAfter({ price, reduce: view.reduce, reduceBy: view.reduceBy }, run * picks.length);
+    const off = view.early?.off ?? 0;
+    const payNow = priceAfter({ price, reduce: view.reduce, reduceBy: view.reduceBy }, run * picks.length, off);
     const spots = picks.map((s) => s.spotsLeft).filter((v): v is number => v != null);
     const slot: TermViewSlot = {
       key: 'pair', groupId: '', clashWith: [], label: picks.map((s) => s.label).join(' + '), venue: null,
       dates: picks.flatMap((s) => s.dates).sort(), spotsLeft: spots.length ? Math.min(...spots) : null, price,
     };
-    return { slot, n, fullPrice: price, savings: null, lastJoin: lastJoin * picks.length, run: run * picks.length, left: n - run * picks.length, payNow, reducedBy: price - payNow, joining: slot.dates.slice(run * picks.length) };
+    return { slot, n, fullPrice: price, savings: null, lastJoin: lastJoin * picks.length, run: run * picks.length, left: n - run * picks.length, payNow, reducedBy: Math.max(0, price - off) - payNow, earlyUntil: view.early?.until ?? null, joining: slot.dates.slice(run * picks.length) };
   }
   const slot = view.slots[Math.min(slotIdx, view.slots.length - 1)];
   if (!slot || slot.dates.length === 0) return null;
   const n = slot.dates.length;
   const lastJoin = lastJoinableAfter({ allowMidTerm: view.allowMidTerm, minLeft: view.minLeft }, n);
   const run = Math.min(passed, lastJoin);
-  const payNow = priceAfter({ price: slot.price, reduce: view.reduce, reduceBy: view.reduceBy }, run);
+  const off = view.early?.off ?? 0;
+  const payNow = priceAfter({ price: slot.price, reduce: view.reduce, reduceBy: view.reduceBy }, run, off);
   const singlesTotal = view.unitPrice != null ? view.unitPrice * n : null;
   const savings = singlesTotal != null && singlesTotal > slot.price ? Math.round(singlesTotal - slot.price) : null;
   return {
     slot, n, fullPrice: slot.price, savings, lastJoin, run, left: n - run, payNow,
-    reducedBy: slot.price - payNow, joining: slot.dates.slice(run),
+    reducedBy: Math.max(0, slot.price - off) - payNow, earlyUntil: view.early?.until ?? null, joining: slot.dates.slice(run),
   };
 }
 
@@ -218,8 +225,11 @@ export function BookModeChoice({
           </span>
           <span className="mt-2 block text-lg font-black text-[#FA4D8D]">
             ${quote.payNow}
-            {midTerm && quote.reducedBy > 0 && (
+            {(midTerm ? quote.reducedBy > 0 : false) || quote.earlyUntil ? (
               <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${quote.fullPrice}</span>
+            ) : null}
+            {quote.earlyUntil && (
+              <span className="ml-2 rounded-full bg-[#DDF3EE] px-2 py-0.5 text-xs font-black text-[#0F6E56]">Early price until {sgDay(quote.earlyUntil)}</span>
             )}
             {!midTerm && quote.savings != null && (
               <span className="ml-2 text-xs font-bold text-[#0F6E56]">Save ${quote.savings} vs single sessions</span>
@@ -286,7 +296,7 @@ export function TermEnrolPanel({
   onSlotChange: (i: number) => void;
   quote: TermQuote;
 }) {
-  const { slot, run, left, n, payNow, fullPrice, reducedBy } = quote;
+  const { slot, run, left, n, payNow, fullPrice, reducedBy, earlyUntil } = quote;
 
   return (
     <section className="space-y-5">
@@ -347,9 +357,12 @@ export function TermEnrolPanel({
           <span className="font-black text-[#34406f]">{run === 0 ? 'Full term' : `${left} of ${n} sessions left`}</span>
           <span className="text-2xl font-black text-[#FA4D8D]">
             ${payNow}
-            {run > 0 && reducedBy > 0 && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
+            {((run > 0 && reducedBy > 0) || earlyUntil) && <span className="ml-2 text-sm font-semibold text-[#697390] line-through">${fullPrice}</span>}
           </span>
         </div>
+        {earlyUntil && (
+          <p className="mt-1 text-sm font-bold text-[#0F6E56]">Early price: enrol by {sgDay(earlyUntil)} to pay ${payNow}. After that it is ${Math.max(0, fullPrice - (run > 0 ? reducedBy : 0))}.</p>
+        )}
         {run > 0 && reducedBy > 0 && (
           <p className="mt-1 text-sm font-semibold text-[#59658d]">
             {run} {run === 1 ? 'session has' : 'sessions have'} already run, so the price drops by ${reducedBy}.

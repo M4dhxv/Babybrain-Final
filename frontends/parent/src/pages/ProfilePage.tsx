@@ -127,6 +127,8 @@ type CustomerBookingRow = {
   spot_open?: boolean;
   // A waitlist place on a term session: how it was booked (00259).
   term_kind?: "single" | "trial" | "package" | "makeup" | "term" | null;
+  // An enrolment session of a term that has begun: only the provider can cancel it (00278).
+  term_started?: boolean;
   // Wix Events: the ticket this seat holds (number + the QR target scanned at the door).
   event_ticket?: { orderId: string; ticketNumber: string; checkInUrl: string | null } | null;
   // Wix Events: the order / RSVP behind this seat, and whether the event is online.
@@ -171,6 +173,8 @@ type BookingItem = {
   // pays at the term's price and opens the booking page in that mode, and the
   // place can always be left, since nothing was paid.
   termKind: "single" | "trial" | "package" | "makeup" | "term" | null;
+  /** An enrolment session of a term that has begun (00278): cancelling goes through the provider. */
+  termStarted: boolean;
   // Wix Events tickets for this booking, one per seat (empty for everything else).
   tickets: { orderId: string; ticketNumber: string; checkInUrl: string | null }[];
   // An ONLINE Wix event: how to fetch the join link (an order for tickets, an RSVP otherwise).
@@ -2088,6 +2092,7 @@ export default function ProfilePage() {
               claimIds: ordered.filter((x) => x.can_claim === true).map((x) => x.id),
               spotOpen: ordered.some((x) => x.spot_open === true),
               termKind: ordered.find((x) => x.term_kind)?.term_kind ?? null,
+              termStarted: ordered.some((x) => x.term_started === true),
               tickets: ordered.flatMap((x) => (x.event_ticket ? [x.event_ticket] : [])),
               joinOnline: ordered.find((x) => x.event_access?.online)?.event_access ?? null,
               isEvent: act?.wix_service_type === "EVENT",
@@ -3947,6 +3952,8 @@ function BookingList({ items, emptyCopy, onChanged, isPlus = false }: { items: B
       ? "This is a ticketed event — it can't be cancelled once booked. Contact the provider if you need help."
       : b.isCourse
       ? "This is a course — your enrolment covers the whole run, so it can't be cancelled online. Contact the provider if you need help."
+      : b.termStarted
+      ? "This term has started, so its sessions can't be cancelled online. Contact the provider if you need to miss a session."
       : !b.allowCancel
       ? "The provider does not allow cancellations for this session. Contact them directly if you need help."
       : cutoffPassed(b, b.cancelCutoffH)

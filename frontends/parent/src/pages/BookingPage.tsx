@@ -25,7 +25,7 @@ import { sgDateTime, sgDay, sgTime, sgDayRange, courseStrands, bookingOpen } fro
 import { enrolMonthly, useActivityMonthly, MONTHLY_DUE_DAY, MONTHLY_NOTICE_DAYS, lastPayDay } from "../lib/monthly";
 import { BookModeChoice, TermComboPicker, TermEnrolPreview, TermPicker, TermSessionPicker, type BookMode, type TermOffer } from "../components/TermBookingPreview";
 import { termsPreviewEnabled } from "../lib/termsPreview";
-import { flexibleOffering, liveComboQuote, liveQuote, liveSlotsClash, termsDb, useActivityTerms, useTermCredit, useTrialRemaining, withdrawalNotice, type LiveSlot } from "../lib/terms";
+import { earlyDateLabel, earlyNow, flexibleOffering, liveComboQuote, liveQuote, liveSlotsClash, termsDb, useActivityTerms, useTermCredit, useTrialRemaining, withdrawalNotice, type LiveSlot } from "../lib/terms";
 import { usePackagesOpen } from "../lib/termHeadlines";
 import { useActivityDetail, isPackOnSale, packExpiryText, isPackBestValue } from "../lib/data";
 import { formatChildAge, formatAgeRange, ageInMonths } from "../lib/database.types";
@@ -1983,7 +1983,8 @@ export default function BookingPage() {
                     terms={liveTerms.map((t) => {
                       const dates = t.slots.flatMap((s) => s.dates).sort();
                       const counts = t.slots.map((s) => s.dates.length);
-                      const prices = t.slots.map((s) => s.price);
+                      const early = earlyNow(t);
+                      const prices = t.slots.map((s) => Math.max(0, s.price - (early?.off ?? 0)));
                       if (t.slotMode === "flexible") {
                         return { key: t.id, name: t.name, range: `${sgDay(dates[0])} to ${sgDay(dates[dates.length - 1])}`, ...flexibleOffering(t, (n) => `$${n}`) };
                       }
@@ -1993,7 +1994,7 @@ export default function BookingPage() {
                         sessions: Math.min(...counts) === Math.max(...counts) ? `${counts[0]} sessions` : `${Math.min(...counts)} to ${Math.max(...counts)} sessions`,
                         range: `${sgDay(dates[0])} to ${sgDay(dates[dates.length - 1])}`,
                         slots: t.slots.map((s) => ({ label: s.label, venue: s.venue })),
-                        price: Math.min(...prices) === Math.max(...prices) ? `$${prices[0]}` : `From $${Math.min(...prices)}`,
+                        price: `${Math.min(...prices) === Math.max(...prices) ? `$${prices[0]}` : `From $${Math.min(...prices)}`}${early ? ` · early price until ${earlyDateLabel(early.until)}` : ""}`,
                       };
                     })}
                     selected={liveTerm.id}

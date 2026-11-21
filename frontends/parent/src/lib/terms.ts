@@ -42,6 +42,8 @@ export type LiveTerm = {
   minLeft: number;
   reduce: boolean;
   reduceBy: number;
+  /** An early price the vendor set (00278): what the term costs until `until` (a Singapore date, YYYY-MM-DD). */
+  early: { price: number; until: string } | null;
   allowSingles: boolean;
   singlePrice: number;
   allowTrial: boolean;
@@ -134,6 +136,8 @@ type TermRow = {
   min_left: number;
   reduce_enabled: boolean;
   reduce_by_cents: number;
+  early_price_cents?: number | null;
+  early_price_until?: string | null;
   allow_singles: boolean;
   single_price_cents: number;
   allow_trial: boolean;
@@ -230,6 +234,10 @@ function derive(rows: { terms: TermRow[]; sessions: SessionRow[] }, spotsBySessi
       minLeft: t.min_left,
       reduce: t.reduce_enabled,
       reduceBy: dollars(t.reduce_by_cents),
+      early:
+        t.early_price_cents != null && t.early_price_until
+          ? { price: dollars(t.early_price_cents), until: t.early_price_until }
+          : null,
       allowSingles: t.allow_singles,
       singlePrice: dollars(t.single_price_cents),
       allowTrial: t.allow_trial,
@@ -321,10 +329,25 @@ export type LiveQuote = {
   run: number;
   left: number;
   payNow: number;
+  /** The last day of the early price that is lowering `payNow` right now (00278); null when none applies. */
+  earlyUntil: string | null;
   joining: string[];
   joinable: boolean;
   reason: string | null;
 };
+
+/** What the term's early price takes off right now, in dollars, and its last day; null when it has none
+ *  or its last day (the whole of it, Singapore time) has passed. Mirrors term_early_discount() in 00278. */
+export function earlyNow(term: Pick<LiveTerm, "price" | "early">): { off: number; until: string } | null {
+  if (!term.early) return null;
+  const endsAt = Date.parse(`${term.early.until}T00:00:00+08:00`) + 86_400_000;
+  const off = Math.max(0, term.price - term.early.price);
+  return Date.now() < endsAt && off > 0 ? { off, until: term.early.until } : null;
+}
+
+/** "Wed 15 Jan" for a YYYY-MM-DD date. */
+export const earlyDateLabel = (ymd: string) =>
+  new Date(`${ymd}T12:00:00+08:00`).toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Singapore" });
 
 /** What a family would pay for this slot right now. Mirrors term_quote() in
  *  00243 (which /api/terms/checkout charges from): a session counts as run once
@@ -335,7 +358,9 @@ export function liveQuote(term: LiveTerm, slot: LiveSlot, cutoffMinutes: number 
   const run = slot.dates.filter((d) => Date.parse(d) <= closeBy).length;
   const left = n - run;
   const fullPrice = slot.price;
-  const payNow = term.reduce ? Math.max(0, fullPrice - term.reduceBy * run) : fullPrice;
+  const early = earlyNow(term);
+  const basePrice = Math.max(0, fullPrice - (early?.off ?? 0));
+  const payNow = term.reduce ? Math.max(0, basePrice - term.reduceBy * run) : basePrice;
   const singlesTotal = term.allowSingles ? term.singlePrice * n : null;
   let reason: string | null = null;
   if (left === 0) reason = "This term has finished.";
@@ -352,6 +377,7 @@ export function liveQuote(term: LiveTerm, slot: LiveSlot, cutoffMinutes: number 
     run,
     left,
     payNow,
+    earlyUntil: early?.until ?? null,
     joining: slot.dates.slice(run),
     joinable: reason == null,
     reason,
@@ -371,7 +397,9 @@ export function liveComboQuote(term: LiveTerm, slots: LiveSlot[], cutoffMinutes:
   const n = per.reduce((x, q) => x + q.n, 0);
   const left = per.reduce((x, q) => x + q.left, 0);
   const fullPrice = term.price;
-  const payNow = term.reduce ? Math.max(0, fullPrice - term.reduceBy * run) : fullPrice;
+  const early = earlyNow(term);
+  const basePrice = Math.max(0, fullPrice - (early?.off ?? 0));
+  const payNow = term.reduce ? Math.max(0, basePrice - term.reduceBy * run) : basePrice;
   const blocked = per.find((q) => !q.joinable);
   const dates = slots.flatMap((s) => s.dates).sort();
   const spots = slots.map((s) => s.spotsLeft).filter((v): v is number => v != null);
@@ -403,6 +431,7 @@ export function liveComboQuote(term: LiveTerm, slots: LiveSlot[], cutoffMinutes:
     run,
     left,
     payNow,
+    earlyUntil: early?.until ?? null,
     joining: per.flatMap((q) => q.joining).sort(),
     joinable: !blocked,
     reason: blocked?.reason ?? null,
@@ -427,7 +456,7 @@ export function flexibleOffering(t: LiveTerm, money: (n: number) => string) {
       label: `Choose 1 of ${t.slots.filter((s) => s.groupId === g.id).length} · ${g.name}`,
       venue: null as string | null,
     })),
-    price: `${money(t.price)} for ${t.groups.length} sessions a week`,
+    price: `${money(t.price - (earlyNow(t)?.off ?? 0))} for ${t.groups.length} sessions a week${earlyNow(t) ? ` (early price until ${earlyDateLabel(earlyNow(t)!.until)})` : ""}`,
   };
 }
 
